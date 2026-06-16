@@ -1,8 +1,8 @@
 extends CharacterBody2D
 
-const DASH_AMT: float= 480
+const DASH_AMT: float= 360.0
 const DASH_TIME: float= 0.2
-const SPEED = 300.0
+const SPEED = 200.0
 const JUMP_VELOCITY = -400.0
 var can_dash: bool = true
 var is_dashing: bool=false
