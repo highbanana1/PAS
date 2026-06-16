@@ -1,0 +1,32 @@
+[gd_scene format=3 uid="uid://c84y3rl70g6kb"]
+
+[ext_resource type="Texture2D" uid="uid://cd0dmx6befbfl" path="res://asset/pic/mro.PNG" id="1_0ofqp"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ujp6e"]
+atlas = ExtResource("1_0ofqp")
+region = Rect2(0, 0, 2048, 2048)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_d3koj"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ujp6e")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_yb7km"]
+size = Vector2(32.59375, 82.03906)
+
+[node name="mro" type="CharacterBody2D" unique_id=944668001]
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1460395724]
+position = Vector2(1.9999999, -55)
+scale = Vector2(0.058, 0.062)
+sprite_frames = SubResource("SpriteFrames_d3koj")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1736694654]
+position = Vector2(3, -41)
+shape = SubResource("RectangleShape2D_yb7km")

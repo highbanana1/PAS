@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://n0h60x7a3824"]
+
+[ext_resource type="PackedScene" uid="uid://c84y3rl70g6kb" path="res://scene/mro.tscn" id="1_itxqv"]
+[ext_resource type="Script" uid="uid://cs7ub5w222p5q" path="res://scene/script/mro.gd" id="2_v0l8b"]
+
+[sub_resource type="WorldBoundaryShape2D" id="WorldBoundaryShape2D_v0l8b"]
+
+[node name="Main" type="Node2D" unique_id=1750752466]
+
+[node name="mro" parent="." unique_id=944668001 instance=ExtResource("1_itxqv")]
+position = Vector2(1, 0)
+scale = Vector2(0.67, 0.67)
+script = ExtResource("2_v0l8b")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=967999315]
+position = Vector2(3, -33)
+zoom = Vector2(1.915, 1.915)
+
+[node name="StaticBody2D" type="StaticBody2D" parent="." unique_id=1647985912]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D" unique_id=459911185]
+position = Vector2(3, 21)
+shape = SubResource("WorldBoundaryShape2D_v0l8b")
