@@ -1,6 +1,8 @@
 [gd_scene format=3 uid="uid://cqi3n4tic32g5"]
 
 [ext_resource type="Texture2D" uid="uid://d3dkyd7p7q3ep" path="res://asset/pic/idle.PNG" id="1_qycrm"]
+[ext_resource type="Script" uid="uid://df8do647adbnu" path="res://scene/script/maincharac.gd" id="1_xb537"]
+[ext_resource type="PackedScene" uid="uid://m0j6djec1kfa" path="res://scene/gun.tscn" id="2_h5hy6"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_h5hy6"]
 atlas = ExtResource("1_qycrm")
@@ -42,6 +44,7 @@ animations = [{
 size = Vector2(254, 630.75)
 
 [node name="CharacterBody2D" type="CharacterBody2D" unique_id=1970495095]
+script = ExtResource("1_xb537")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=2089866369]
 sprite_frames = SubResource("SpriteFrames_4ps4g")
@@ -51,3 +54,6 @@ frame_progress = 0.710254
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=2026302388]
 position = Vector2(4, 99)
 shape = SubResource("RectangleShape2D_xnvsr")
+
+[node name="gun" parent="." unique_id=2007606495 instance=ExtResource("2_h5hy6")]
+position = Vector2(4, 100)
