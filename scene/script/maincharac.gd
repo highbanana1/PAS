@@ -1,7 +1,7 @@
 extends CharacterBody2D
 
-const DASH_AMT: float= 360.0
-const DASH_TIME: float= 0.16
+const DASH_AMT: float= 480
+const DASH_TIME: float= 0.2
 const SPEED = 300.0
 const JUMP_VELOCITY = -400.0
 var can_dash: bool = true
@@ -65,13 +65,14 @@ func _physics_process(delta: float) -> void:
 	# Get the input direction and handle the movement/deceleration.
 	# As good practice, you should replace UI actions with custom gameplay actions.
 	var direction := Input.get_axis("left", "right")
-	if direction:
-		velocity.x = direction * SPEED
+	if !is_dashing:
+		if direction:
+			velocity.x = direction * SPEED
 
-		# 根据移动方向翻转精灵朝向
-		animated_sprite.flip_h = direction < 0
-	else:
-		if !is_dashing:
+			# 根据移动方向翻转精灵朝向
+			animated_sprite.flip_h = direction < 0
+		else:
+			
 			velocity.x = move_toward(velocity.x, 0, SPEED)
 	_dash_logic(delta)
 	move_and_slide()
