@@ -5,7 +5,7 @@
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_xw300"]
 radius = 3.0
-height = 58.0
+height = 48.0
 
 [node name="Node2D" type="Node2D" unique_id=99948417]
 script = ExtResource("1_xw300")
@@ -16,13 +16,13 @@ scale = Vector2(0.044, 0.022)
 texture = ExtResource("1_qwydi")
 
 [node name="VisibleOnScreenNotifier2D" type="VisibleOnScreenNotifier2D" parent="." unique_id=248940759]
-position = Vector2(-17, -9)
+position = Vector2(-16, -9)
 rect = Rect2(-10, -10, 55, 36)
 
 [node name="Area2D" type="Area2D" parent="." unique_id=1043662807]
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=653862788]
-position = Vector2(0.9999995, -1)
+position = Vector2(4, -1)
 rotation = 1.5707964
 shape = SubResource("CapsuleShape2D_xw300")
 

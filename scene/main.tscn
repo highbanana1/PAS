@@ -221,14 +221,8 @@ sources/0 = SubResource("TileSetAtlasSource_wp4xf")
 [node name="Main" type="Node2D" unique_id=1750752466]
 
 [node name="CharacterBody2D" parent="." unique_id=1970495095 instance=ExtResource("1_itxqv")]
-position = Vector2(4, -35.999996)
+position = Vector2(33, -11.000001)
 scale = Vector2(0.03, 0.03)
-
-[node name="Camera2D" type="Camera2D" parent="CharacterBody2D" unique_id=967999315]
-position = Vector2(-33.33333, 99.99988)
-scale = Vector2(33.333332, 33.333332)
-zoom = Vector2(2.46, 2.46)
-position_smoothing_enabled = true
 
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=1388795159]
 position = Vector2(15, 7)

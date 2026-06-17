@@ -4,11 +4,14 @@ const DASH_AMT: float= 360.0
 const DASH_TIME: float= 0.2
 const SPEED = 200.0
 const JUMP_VELOCITY = -400.0
+
+@onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
+@onready var dash: GPUParticles2D = $DashParticles
+
 var can_dash: bool = true
 var is_dashing: bool=false
 var dash_dir: Vector2= Vector2.RIGHT
 var dash_timer: float=0.0
-@onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 
 var jump_count = 1
 
@@ -65,18 +68,29 @@ func _physics_process(delta: float) -> void:
 	# Get the input direction and handle the movement/deceleration.
 	# As good practice, you should replace UI actions with custom gameplay actions.
 	var direction := Input.get_axis("left", "right")
-	if direction !=0 and is_on_floor():
+	if direction != 0 and is_on_floor():
 		animated_sprite.play("run")
 	else:
 		animated_sprite.play("idle")
+	
+	#dashing
 	if !is_dashing:
+		dash.emitting = false
 		if direction:
 			velocity.x = direction * SPEED
-
-			# 根据移动方向翻转精灵朝向
-			animated_sprite.flip_h = direction < 0
 		else:
-			
 			velocity.x = move_toward(velocity.x, 0, SPEED)
+	else: 
+		#dash动画
+		animated_sprite.play("dash")
+		#dash残影
+		dash.emitting = true
+		#翻转dash粒子
+		dash.scale.x = -1 if direction < 0 else 1
 	_dash_logic(delta)
+	
+	#根据移动方向翻转精灵朝向
+	animated_sprite.flip_h = direction < 0
+	
+	
 	move_and_slide()

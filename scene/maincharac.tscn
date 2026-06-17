@@ -3,7 +3,46 @@
 [ext_resource type="Texture2D" uid="uid://d3dkyd7p7q3ep" path="res://asset/pic/idle.PNG" id="1_qycrm"]
 [ext_resource type="Script" uid="uid://df8do647adbnu" path="res://scene/script/maincharac.gd" id="1_xb537"]
 [ext_resource type="PackedScene" uid="uid://m0j6djec1kfa" path="res://scene/gun.tscn" id="2_h5hy6"]
+[ext_resource type="Shader" uid="uid://l8l43r5bqc01" path="res://shaders/maincharac.gdshader" id="2_xno6r"]
+[ext_resource type="Texture2D" uid="uid://cijvkdnq277cq" path="res://asset/pic/dash.png" id="3_4ps4g"]
 [ext_resource type="Texture2D" uid="uid://dix6gnb4swhbk" path="res://asset/pic/run.PNG" id="3_7g0xw"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_4ps4g"]
+shader = ExtResource("2_xno6r")
+shader_parameter/particles_anim_h_frames = 4
+shader_parameter/particles_anim_v_frames = 1
+shader_parameter/particles_anim_loop = false
+
+[sub_resource type="Curve" id="Curve_xnvsr"]
+_data = [Vector2(0, 0.49570513), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_o7bvb"]
+curve = SubResource("Curve_xnvsr")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_cxf3b"]
+gravity = Vector3(0, 0, 0)
+scale_min = 0.03
+scale_max = 0.03
+alpha_curve = SubResource("CurveTexture_o7bvb")
+anim_speed_min = 1.0
+anim_speed_max = 1.0
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_o2of7"]
+atlas = ExtResource("3_4ps4g")
+region = Rect2(0, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_berad"]
+atlas = ExtResource("3_4ps4g")
+region = Rect2(1024, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_7p7re"]
+atlas = ExtResource("3_4ps4g")
+region = Rect2(2048, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_wjngw"]
+atlas = ExtResource("3_4ps4g")
+region = Rect2(3072, 0, 1024, 1024)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_h5hy6"]
 atlas = ExtResource("1_qycrm")
@@ -57,6 +96,23 @@ region = Rect2(7168, 0, 1024, 1024)
 animations = [{
 "frames": [{
 "duration": 1.0,
+"texture": SubResource("AtlasTexture_o2of7")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_berad")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_7p7re")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_wjngw")
+}],
+"loop": false,
+"name": &"dash",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
 "texture": SubResource("AtlasTexture_h5hy6")
 }, {
 "duration": 1.0,
@@ -108,11 +164,19 @@ size = Vector2(254, 630.75)
 [node name="CharacterBody2D" type="CharacterBody2D" unique_id=1970495095]
 script = ExtResource("1_xb537")
 
+[node name="DashParticles" type="GPUParticles2D" parent="." unique_id=2094130153]
+material = SubResource("ShaderMaterial_4ps4g")
+position = Vector2(2.3841858e-07, 1.0000002)
+texture = ExtResource("3_4ps4g")
+lifetime = 0.5
+process_material = SubResource("ParticleProcessMaterial_cxf3b")
+
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=2089866369]
 sprite_frames = SubResource("SpriteFrames_4ps4g")
-animation = &"run"
+animation = &"dash"
 autoplay = "idle"
-frame_progress = 0.21396913
+frame = 3
+frame_progress = 1.0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=2026302388]
 position = Vector2(4, 99)
@@ -120,3 +184,6 @@ shape = SubResource("RectangleShape2D_xnvsr")
 
 [node name="gun" parent="." unique_id=2007606495 instance=ExtResource("2_h5hy6")]
 position = Vector2(4, 100)
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=789323785]
+zoom = Vector2(2.3, 2.3)
