@@ -1,8 +1,8 @@
 extends CharacterBody2D
-
+class_name Player
 const DASH_AMT: float= 360.0
 const DASH_TIME: float= 0.2
-const SPEED = 200.0
+const SPEED = 150.0
 const JUMP_VELOCITY = -400.0
 
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
@@ -12,12 +12,25 @@ var can_dash: bool = true
 var is_dashing: bool=false
 var dash_dir: Vector2= Vector2.RIGHT
 var dash_timer: float=0.0
+var get_hit: bool =false
 
 var jump_count = 1
 
 func _ready() -> void:
 	pass
 
+func hit_cooldown(delta:float)->void:
+	var hitcooltimer: float =0.0
+	if hitcooltimer >=0:
+		hitcooltimer-=delta
+	if get_hit:
+		hitcooltimer = 3.0
+		print("hit")
+		
+	if hitcooltimer <= 0:
+		get_hit = false
+		
+	
 
 func _dash_logic(delta: float)-> void:
 	var input_dir: Vector2 = Vector2(
@@ -92,5 +105,5 @@ func _physics_process(delta: float) -> void:
 	#根据移动方向翻转精灵朝向
 	animated_sprite.flip_h = direction < 0
 	
-	
+	hit_cooldown(delta)
 	move_and_slide()

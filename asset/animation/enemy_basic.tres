@@ -1,0 +1,72 @@
+[gd_resource type="SpriteFrames" format=3 uid="uid://3v7l0ogd6pcv"]
+
+[ext_resource type="Texture2D" uid="uid://b6b16hlysn3qt" path="res://asset/pic/enemy1.PNG" id="1_ptmav"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_o070l"]
+atlas = ExtResource("1_ptmav")
+region = Rect2(0, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_bw1di"]
+atlas = ExtResource("1_ptmav")
+region = Rect2(1024, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_cy73c"]
+atlas = ExtResource("1_ptmav")
+region = Rect2(2048, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_p0qf1"]
+atlas = ExtResource("1_ptmav")
+region = Rect2(3072, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_rglxc"]
+atlas = ExtResource("1_ptmav")
+region = Rect2(4096, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_mec4r"]
+atlas = ExtResource("1_ptmav")
+region = Rect2(5120, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ejjun"]
+atlas = ExtResource("1_ptmav")
+region = Rect2(6144, 0, 1024, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_b2jvh"]
+atlas = ExtResource("1_ptmav")
+region = Rect2(7168, 0, 1024, 1024)
+
+[resource]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"death",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_o070l")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bw1di")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_cy73c")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_p0qf1")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_rglxc")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_mec4r")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ejjun")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_b2jvh")
+}],
+"loop": true,
+"name": &"move",
+"speed": 5.0
+}]

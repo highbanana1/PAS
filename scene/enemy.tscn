@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://csy8v2cxdo0dj"]
+
+[ext_resource type="Script" uid="uid://djta1k3pc43rt" path="res://scene/script/enemy.gd" id="1_f87vc"]
+[ext_resource type="SpriteFrames" uid="uid://3v7l0ogd6pcv" path="res://asset/animation/enemy_basic.tres" id="2_8u16h"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_f87vc"]
+radius = 106.0
+height = 546.0
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_8u16h"]
+resource_local_to_scene = true
+radius = 83.0
+height = 498.0
+
+[node name="enemy" type="CharacterBody2D" unique_id=1385635170]
+collision_layer = 8
+collision_mask = 5
+script = ExtResource("1_f87vc")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1760389269]
+z_index = 1
+position = Vector2(3, 86)
+shape = SubResource("CapsuleShape2D_f87vc")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1782374255]
+position = Vector2(0, -5)
+sprite_frames = ExtResource("2_8u16h")
+animation = &"move"
+
+[node name="Area2D" type="Area2D" parent="." unique_id=1770054375]
+collision_layer = 16
+collision_mask = 6
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=368182135]
+position = Vector2(0, 102)
+shape = SubResource("CapsuleShape2D_8u16h")
+
+[connection signal="area_entered" from="Area2D" to="." method="_on_area_2d_area_entered"]
+[connection signal="body_entered" from="Area2D" to="." method="_on_area_2d_body_entered"]

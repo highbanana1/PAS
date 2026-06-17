@@ -28,10 +28,6 @@ alpha_curve = SubResource("CurveTexture_o7bvb")
 anim_speed_min = 1.0
 anim_speed_max = 1.0
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_o2of7"]
-atlas = ExtResource("3_4ps4g")
-region = Rect2(0, 0, 1024, 1024)
-
 [sub_resource type="AtlasTexture" id="AtlasTexture_berad"]
 atlas = ExtResource("3_4ps4g")
 region = Rect2(1024, 0, 1024, 1024)
@@ -96,9 +92,6 @@ region = Rect2(7168, 0, 1024, 1024)
 animations = [{
 "frames": [{
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_o2of7")
-}, {
-"duration": 1.0,
 "texture": SubResource("AtlasTexture_berad")
 }, {
 "duration": 1.0,
@@ -107,9 +100,9 @@ animations = [{
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_wjngw")
 }],
-"loop": false,
+"loop": true,
 "name": &"dash",
-"speed": 5.0
+"speed": 6.0
 }, {
 "frames": [{
 "duration": 1.0,
@@ -161,7 +154,9 @@ animations = [{
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_xnvsr"]
 size = Vector2(254, 630.75)
 
-[node name="CharacterBody2D" type="CharacterBody2D" unique_id=1970495095]
+[node name="Player" type="CharacterBody2D" unique_id=1970495095 groups=["player"]]
+collision_layer = 2
+collision_mask = 265
 script = ExtResource("1_xb537")
 
 [node name="DashParticles" type="GPUParticles2D" parent="." unique_id=2094130153]
@@ -175,8 +170,6 @@ process_material = SubResource("ParticleProcessMaterial_cxf3b")
 sprite_frames = SubResource("SpriteFrames_4ps4g")
 animation = &"dash"
 autoplay = "idle"
-frame = 3
-frame_progress = 1.0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=2026302388]
 position = Vector2(4, 99)
