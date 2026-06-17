@@ -65,6 +65,10 @@ func _physics_process(delta: float) -> void:
 	# Get the input direction and handle the movement/deceleration.
 	# As good practice, you should replace UI actions with custom gameplay actions.
 	var direction := Input.get_axis("left", "right")
+	if direction !=0 and is_on_floor():
+		animated_sprite.play("run")
+	else:
+		animated_sprite.play("idle")
 	if !is_dashing:
 		if direction:
 			velocity.x = direction * SPEED
