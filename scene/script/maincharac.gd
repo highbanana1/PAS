@@ -1,36 +1,48 @@
 extends CharacterBody2D
 class_name Player
+# 在Player脚本顶部加信号定义
+signal health_changed()
 const DASH_AMT: float= 360.0
 const DASH_TIME: float= 0.2
 const SPEED = 150.0
 const JUMP_VELOCITY = -400.0
 
+
+
+
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var dash: GPUParticles2D = $DashParticles
+
+# 血量配置
+@export var max_hp: float = 90
+var real_hp: float = max_hp
+# 每秒扣血计时器
+var damage_timer: float = 0.0
 
 var can_dash: bool = true
 var is_dashing: bool=false
 var dash_dir: Vector2= Vector2.RIGHT
 var dash_timer: float=0.0
 var get_hit: bool =false
+# 全局受伤冷却计时器
+var hitcooltimer: float = 0.0
 
 var jump_count = 1
 
 func _ready() -> void:
 	pass
 
+# 修复后的受伤冷却，不会死循环
 func hit_cooldown(delta:float)->void:
-	var hitcooltimer: float =0.0
-	if hitcooltimer >=0:
-		hitcooltimer-=delta
-	if get_hit:
-		hitcooltimer = 3.0
-		print("hit")
-		
-	if hitcooltimer <= 0:
-		get_hit = false
-		
-	
+	if hitcooltimer > 0:
+		hitcooltimer -= delta
+		if hitcooltimer <= 0:
+			get_hit = false
+
+# 受伤函数
+func take_damage(dmg: float):
+	real_hp = clamp(real_hp - dmg, 0, max_hp)
+	emit_signal("health_changed")
 
 func _dash_logic(delta: float)-> void:
 	var input_dir: Vector2 = Vector2(
@@ -54,13 +66,22 @@ func _dash_logic(delta: float)-> void:
 		velocity = final_dash_dir * DASH_AMT
 	
 	if is_dashing:
-		
 		dash_timer -=delta
 		if dash_timer <= 0.0:
 			is_dashing= false
-		
 
 func _physics_process(delta: float) -> void:
+	# 每秒自动扣1血测试
+	damage_timer += delta
+	if damage_timer >= 1.0:
+		take_damage(1)
+		damage_timer = 0.0
+
+	# 受伤触发冷却计时
+	if get_hit and hitcooltimer <= 0:
+		hitcooltimer = 3.0
+		print("hit")
+
 	# Add the gravity.
 	if not is_on_floor():
 		if !is_dashing:
@@ -79,7 +100,6 @@ func _physics_process(delta: float) -> void:
 		jump_count -= 1
 
 	# Get the input direction and handle the movement/deceleration.
-	# As good practice, you should replace UI actions with custom gameplay actions.
 	var direction := Input.get_axis("left", "right")
 	if direction != 0 and is_on_floor():
 		animated_sprite.play("run")
