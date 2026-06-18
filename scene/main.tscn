@@ -3,6 +3,13 @@
 [ext_resource type="PackedScene" uid="uid://cqi3n4tic32g5" path="res://scene/maincharac.tscn" id="1_itxqv"]
 [ext_resource type="Texture2D" uid="uid://cnenmev2vlhc3" path="res://asset/pic/world_tileset.png" id="2_v0l8b"]
 [ext_resource type="PackedScene" uid="uid://csy8v2cxdo0dj" path="res://scene/enemy.tscn" id="3_wp4xf"]
+[ext_resource type="Script" uid="uid://cv7bksxo7md7m" path="res://scene/winning_point.gd" id="4_0ha60"]
+[ext_resource type="Texture2D" uid="uid://0olwdybyoxdg" path="res://asset/pic/Star.png" id="5_4j5ol"]
+[ext_resource type="Texture2D" uid="uid://csx2odml0ljgl" path="res://asset/pic/HP.png" id="6_b5f6u"]
+[ext_resource type="Script" uid="uid://tbxapqc1l5jg" path="res://scene/ui_hp.gd" id="6_tqoya"]
+[ext_resource type="Texture2D" uid="uid://b123b502l8adg" path="res://asset/pic/HPlineOut.png" id="7_tqoya"]
+[ext_resource type="Texture2D" uid="uid://dvy0yyio8qro6" path="res://asset/pic/HPlineFill.png" id="8_k65ib"]
+[ext_resource type="Texture2D" uid="uid://cmg0tudkcs1qq" path="res://asset/pic/HPlineIn.png" id="9_wscrc"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_wp4xf"]
 texture = ExtResource("2_v0l8b")
@@ -219,11 +226,17 @@ texture = ExtResource("2_v0l8b")
 physics_layer_0/collision_layer = 1
 sources/0 = SubResource("TileSetAtlasSource_wp4xf")
 
+[sub_resource type="CircleShape2D" id="CircleShape2D_p1hux"]
+radius = 12.0415945
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_tqoya"]
+
 [node name="Main" type="Node2D" unique_id=1750752466]
 
 [node name="CharacterBody2D" parent="." unique_id=1970495095 instance=ExtResource("1_itxqv")]
 position = Vector2(33, -11.000001)
 scale = Vector2(0.03, 0.03)
+collision_mask = 297
 
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=1388795159]
 position = Vector2(15, 7)
@@ -233,3 +246,67 @@ tile_set = SubResource("TileSet_brvut")
 [node name="enemy" parent="." unique_id=1385635170 instance=ExtResource("3_wp4xf")]
 position = Vector2(183, -17)
 scale = Vector2(0.045, 0.045)
+
+[node name="WinningPoint" type="Area2D" parent="." unique_id=1711626391]
+position = Vector2(100, -100)
+collision_layer = 32
+collision_mask = 2
+script = ExtResource("4_0ha60")
+
+[node name="Sprite2D" type="Sprite2D" parent="WinningPoint" unique_id=700696869]
+texture = ExtResource("5_4j5ol")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="WinningPoint" unique_id=1783850983]
+shape = SubResource("CircleShape2D_p1hux")
+
+[node name="UILayer" type="CanvasLayer" parent="." unique_id=660176362 node_paths=PackedStringArray("bar1", "bar2", "bar3", "player")]
+script = ExtResource("6_tqoya")
+bar1 = NodePath("PanelHP/TextureProgressBar")
+bar2 = NodePath("PanelHP/TextureProgressBar2")
+bar3 = NodePath("PanelHP/TextureProgressBar3")
+player = NodePath("../CharacterBody2D")
+
+[node name="PanelHP" type="Panel" parent="UILayer" unique_id=977858274]
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 60.0
+offset_bottom = 60.0
+scale = Vector2(3, 3)
+theme_override_styles/panel = SubResource("StyleBoxEmpty_tqoya")
+
+[node name="Sprite2D" type="Sprite2D" parent="UILayer/PanelHP" unique_id=2024386094]
+position = Vector2(18.333332, 18.333332)
+texture = ExtResource("6_b5f6u")
+
+[node name="TextureProgressBar" type="TextureProgressBar" parent="UILayer/PanelHP" unique_id=2138795201]
+layout_mode = 0
+offset_left = 25.333334
+offset_top = 8.999999
+offset_right = 65.333336
+offset_bottom = 49.0
+value = 100.0
+texture_under = ExtResource("8_k65ib")
+texture_over = ExtResource("7_tqoya")
+texture_progress = ExtResource("9_wscrc")
+
+[node name="TextureProgressBar2" type="TextureProgressBar" parent="UILayer/PanelHP" unique_id=428575998]
+layout_mode = 0
+offset_left = 40.666668
+offset_top = 8.999999
+offset_right = 80.66667
+offset_bottom = 49.0
+value = 100.0
+texture_under = ExtResource("8_k65ib")
+texture_over = ExtResource("7_tqoya")
+texture_progress = ExtResource("9_wscrc")
+
+[node name="TextureProgressBar3" type="TextureProgressBar" parent="UILayer/PanelHP" unique_id=16821192]
+layout_mode = 0
+offset_left = 56.66667
+offset_top = 8.999999
+offset_right = 96.66667
+offset_bottom = 49.0
+value = 100.0
+texture_under = ExtResource("8_k65ib")
+texture_over = ExtResource("7_tqoya")
+texture_progress = ExtResource("9_wscrc")
