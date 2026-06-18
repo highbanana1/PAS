@@ -9,8 +9,8 @@ height = 546.0
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_8u16h"]
 resource_local_to_scene = true
-radius = 83.0
-height = 498.0
+radius = 187.0
+height = 658.0
 
 [node name="enemy" type="CharacterBody2D" unique_id=1385635170]
 collision_layer = 8
@@ -27,7 +27,7 @@ position = Vector2(0, -5)
 sprite_frames = ExtResource("2_8u16h")
 animation = &"move"
 
-[node name="Area2D" type="Area2D" parent="." unique_id=1770054375]
+[node name="Area2D" type="Area2D" parent="." unique_id=1770054375 groups=["enemy"]]
 collision_layer = 16
 collision_mask = 6
 

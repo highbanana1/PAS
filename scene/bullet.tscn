@@ -4,10 +4,10 @@
 [ext_resource type="Script" uid="uid://ddcoxem2yejkr" path="res://scene/script/bullet.gd" id="1_xw300"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_xw300"]
-radius = 3.0
-height = 48.0
+radius = 6.0
+height = 52.0
 
-[node name="Node2D" type="Node2D" unique_id=99948417]
+[node name="Node2D" type="Node2D" unique_id=99948417 groups=["bullet"]]
 script = ExtResource("1_xw300")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=828095650]
@@ -17,9 +17,11 @@ texture = ExtResource("1_qwydi")
 
 [node name="VisibleOnScreenNotifier2D" type="VisibleOnScreenNotifier2D" parent="." unique_id=248940759]
 position = Vector2(-16, -9)
-rect = Rect2(-10, -10, 55, 36)
+rect = Rect2(-10, -10, 58, 36)
 
 [node name="Area2D" type="Area2D" parent="." unique_id=1043662807]
+collision_layer = 4
+collision_mask = 11
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=653862788]
 position = Vector2(4, -1)
@@ -27,3 +29,5 @@ rotation = 1.5707964
 shape = SubResource("CapsuleShape2D_xw300")
 
 [connection signal="screen_exited" from="VisibleOnScreenNotifier2D" to="." method="_on_visible_on_screen_notifier_2d_screen_exited"]
+[connection signal="area_entered" from="Area2D" to="." method="_on_area_2d_area_entered"]
+[connection signal="body_entered" from="Area2D" to="." method="_on_area_2d_body_entered"]

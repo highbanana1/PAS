@@ -13,22 +13,21 @@ var is_dashing: bool=false
 var dash_dir: Vector2= Vector2.RIGHT
 var dash_timer: float=0.0
 var get_hit: bool =false
+@export var hitable: bool = true
 
-var jump_count = 1
+@export var jump_count = 1
 
 func _ready() -> void:
 	pass
 
 func hit_cooldown(delta:float)->void:
-	var hitcooltimer: float =0.0
-	if hitcooltimer >=0:
-		hitcooltimer-=delta
-	if get_hit:
-		hitcooltimer = 3.0
+	if get_hit and hitable:
+		$Timer.start()
+		hitable = false
 		print("hit")
-		
-	if hitcooltimer <= 0:
-		get_hit = false
+		get_hit=false
+	
+	
 		
 	
 
@@ -107,3 +106,9 @@ func _physics_process(delta: float) -> void:
 	
 	hit_cooldown(delta)
 	move_and_slide()
+
+
+func _on_timer_timeout() -> void:
+	hitable = true
+	print("cool")
+	$Timer.stop()

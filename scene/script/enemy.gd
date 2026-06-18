@@ -4,7 +4,7 @@ class_name Enemy
 const SPEED = 300.0
 const JUMP_VELOCITY = -400.0
 var health: int = 5
-
+var get_hit: bool = false
 
 func _physics_process(delta: float) -> void:
 	# Add the gravity.
@@ -21,9 +21,10 @@ func _physics_process(delta: float) -> void:
 
 
 func _on_area_2d_area_entered(area: Area2D) -> void:
-	if area.is_in_group("player"):
+	if area.is_in_group("bullet"):
 		area.get_hit = true
-		
+		area.die()
+		pass
 
 
 func _on_area_2d_body_entered(body: Node2D) -> void:
