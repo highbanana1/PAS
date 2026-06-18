@@ -12,18 +12,18 @@ resource_local_to_scene = true
 radius = 187.0
 height = 658.0
 
-[node name="enemy" type="CharacterBody2D" unique_id=1385635170]
+[node name="enemy" type="CharacterBody2D" unique_id=1385635170 groups=["enemy"]]
 collision_layer = 8
 collision_mask = 5
 script = ExtResource("1_f87vc")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1760389269]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1760389269 groups=["enemy"]]
 z_index = 1
 position = Vector2(3, 86)
 shape = SubResource("CapsuleShape2D_f87vc")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1782374255]
-position = Vector2(0, -5)
+position = Vector2(3, 0)
 sprite_frames = ExtResource("2_8u16h")
 animation = &"move"
 
@@ -34,6 +34,14 @@ collision_mask = 6
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=368182135]
 position = Vector2(0, 102)
 shape = SubResource("CapsuleShape2D_8u16h")
+
+[node name="walldetection" type="RayCast2D" parent="." unique_id=1189833120]
+position = Vector2(176, -2)
+target_position = Vector2(474, -1)
+
+[node name="LedgeDetectionRay" type="RayCast2D" parent="." unique_id=1766431924]
+position = Vector2(219, 109)
+target_position = Vector2(-6, 347)
 
 [connection signal="area_entered" from="Area2D" to="." method="_on_area_2d_area_entered"]
 [connection signal="body_entered" from="Area2D" to="." method="_on_area_2d_body_entered"]
