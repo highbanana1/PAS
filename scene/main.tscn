@@ -1,6 +1,7 @@
 [gd_scene format=4 uid="uid://n0h60x7a3824"]
 
 [ext_resource type="PackedScene" uid="uid://cqi3n4tic32g5" path="res://scene/maincharac.tscn" id="1_itxqv"]
+[ext_resource type="Script" uid="uid://0tledkjbf8u" path="res://scene/main.gd" id="1_k65ib"]
 [ext_resource type="Texture2D" uid="uid://cnenmev2vlhc3" path="res://asset/pic/world_tileset.png" id="2_v0l8b"]
 [ext_resource type="PackedScene" uid="uid://csy8v2cxdo0dj" path="res://scene/enemy.tscn" id="3_wp4xf"]
 [ext_resource type="Script" uid="uid://cv7bksxo7md7m" path="res://scene/winning_point.gd" id="4_0ha60"]
@@ -233,6 +234,7 @@ radius = 12.0415945
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_tqoya"]
 
 [node name="Main" type="Node2D" unique_id=1750752466]
+script = ExtResource("1_k65ib")
 
 [node name="CharacterBody2D" parent="." unique_id=1970495095 instance=ExtResource("1_itxqv")]
 position = Vector2(33, -11.000001)
@@ -311,3 +313,9 @@ value = 100.0
 texture_under = ExtResource("8_k65ib")
 texture_over = ExtResource("7_tqoya")
 texture_progress = ExtResource("9_wscrc")
+
+[node name="Timer" type="Timer" parent="." unique_id=579124217]
+wait_time = 10.0
+
+[connection signal="character_died" from="CharacterBody2D" to="." method="_on_character_body_2d_character_died"]
+[connection signal="timeout" from="Timer" to="." method="_on_timer_timeout"]

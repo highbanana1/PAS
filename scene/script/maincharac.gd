@@ -2,6 +2,7 @@ extends CharacterBody2D
 class_name Player
 # 在Player脚本顶部加信号定义
 signal health_changed()
+signal character_died()
 const DASH_AMT: float= 360.0
 const DASH_TIME: float= 0.2
 const SPEED = 150.0
@@ -54,7 +55,11 @@ func take_damage(dmg: float):
 	real_hp = clamp(real_hp - dmg, 0, max_hp)
 	emit_signal("health_changed")
 
-
+func _die_logic(health: float)-> void:
+	if health <=0:
+		character_died.emit()
+		queue_free()
+		
 func _dash_logic(delta: float)-> void:
 	var input_dir: Vector2 = Vector2(
 		Input.get_axis("left","right"),
@@ -137,6 +142,7 @@ func _physics_process(delta: float) -> void:
 	animated_sprite.flip_h = direction < 0
 	
 	hit_cooldown(delta)
+	_die_logic(real_hp)
 	move_and_slide()
 
 
