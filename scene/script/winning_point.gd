@@ -5,7 +5,7 @@ extends Area2D
 
 # 状态
 var is_picked: bool = false
-var player_ref: CharacterBody2D = null
+var ref = null
 
 func _ready() -> void:
 	# 开局固定出生位置
@@ -15,9 +15,9 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	# 已拾取则跟随玩家悬浮
-	if is_picked and player_ref != null:
-		global_position.x = player_ref.global_position.x
-		global_position.y = player_ref.global_position.y + float_offset_y
+	if is_picked and ref != null:
+		global_position.x = ref.global_position.x
+		global_position.y = ref.global_position.y + float_offset_y
 		# 轻微上下浮动星光效果（修复计时函数）
 		global_position.y += sin(Time.get_ticks_msec() * 0.003) * 2.5
 
@@ -26,8 +26,9 @@ func _on_player_touch(body: Node2D) -> void:
 	if is_picked:
 		return
 	# 只识别玩家（你的玩家根节点是CharacterBody2D）
-	if body is CharacterBody2D:
+	if body.is_in_group("player"):
 		is_picked = true
-		player_ref = body
+		ref = body
+		body.current_winning_point = $"."
 		# 拾取后关闭碰撞，避免重复触发
-		monitoring = false
+		#monitoring = false

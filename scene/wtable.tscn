@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://dmspgvkiv4gvb"]
+
+[ext_resource type="Texture2D" uid="uid://767rjjm74w7v" path="res://asset/pic/wtable.png" id="1_l8cjy"]
+[ext_resource type="Script" uid="uid://cfxetch7melt" path="res://scene/script/wtable.gd" id="1_ris6q"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_r4uu4"]
+height = 62.0
+
+[node name="wtable" type="Area2D" unique_id=330558205 groups=["table"]]
+collision_layer = 128
+collision_mask = 2
+script = ExtResource("1_ris6q")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1776870366]
+texture = ExtResource("1_l8cjy")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1406622883]
+position = Vector2(0, -20)
+shape = SubResource("CapsuleShape2D_r4uu4")
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]

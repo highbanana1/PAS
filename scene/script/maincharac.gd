@@ -3,12 +3,11 @@ class_name Player
 # 在Player脚本顶部加信号定义
 signal health_changed()
 signal character_died()
+
 const DASH_AMT: float= 360.0
 const DASH_TIME: float= 0.2
 const SPEED = 150.0
 const JUMP_VELOCITY = -400.0
-
-
 
 
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
@@ -19,6 +18,8 @@ const JUMP_VELOCITY = -400.0
 var real_hp: float = max_hp
 # 每秒扣血计时器
 var damage_timer: float = 0.0
+
+var current_winning_point: Area2D
 
 var can_dash: bool = true
 var is_dashing: bool=false
@@ -96,7 +97,6 @@ func _physics_process(delta: float) -> void:
 	# 受伤触发冷却计时
 	if get_hit and hitcooltimer <= 0:
 		hitcooltimer = 3.0
-		print("hit")
 
 	# Add the gravity.
 	if not is_on_floor():
@@ -148,5 +148,4 @@ func _physics_process(delta: float) -> void:
 
 func _on_timer_timeout() -> void:
 	hitable = true
-	print("cool")
 	$Timer.stop()
