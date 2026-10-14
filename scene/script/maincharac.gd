@@ -114,6 +114,8 @@ var dash_timer: float:
 var get_hit: bool =false
 
 @export var hitable: bool = true
+## Contact-hit invincibility in seconds. Zero disables this protection.
+@export_range(0.0, 30.0, 0.05, "or_greater", "suffix:s") var hit_invincibility_time: float = 3.0
 
 # 全局受伤冷却计时器
 var hitcooltimer: float = 0.0
@@ -143,18 +145,17 @@ func _ready() -> void:
 	_presentation.configure(self, $WeaponController, get_guard_component())
 
 # 修复后的受伤冷却，不会死循环
-func hit_cooldown(delta:float)->void:
+func hit_cooldown(delta: float) -> void:
 	if get_hit and hitable:
-		$Timer.start()
-		hitable = false
-		print("hit")
+		if hit_invincibility_time > 0.0:
+			$Timer.start(hit_invincibility_time)
+			hitable = false
 		take_damage(10)
-		get_hit=false
-	if hitcooltimer > 0:
+		get_hit = false
+	if hitcooltimer > 0.0:
 		hitcooltimer -= delta
-		if hitcooltimer <= 0:
+		if hitcooltimer <= 0.0:
 			get_hit = false
-
 # 受伤函数
 func take_damage(dmg: float) -> void:
 	_receiver.receive_attack(Context.new(dmg, global_position, null, false))
@@ -218,7 +219,7 @@ func _physics_process(delta: float) -> void:
 	if is_dead or not is_locally_controlled:
 		return
 	if get_hit and hitcooltimer <= 0.0:
-		hitcooltimer = 3.0
+		hitcooltimer = hit_invincibility_time
 	var direction := Input.get_axis("left", "right")
 	animated_sprite.play("run" if direction != 0.0 and is_on_floor() else "idle")
 	if is_dashing:
