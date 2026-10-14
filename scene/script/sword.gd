@@ -9,6 +9,7 @@ const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 @export var swing_duration: float = 0.09
 @export var recovery_duration: float = 0.11
 @export var attack_cooldown: float = 0.245
+@export var guard_forward_offset: float = 8.0
 
 var is_swinging: bool = false
 var _swing_direction: Vector2 = Vector2.RIGHT
@@ -17,6 +18,8 @@ var _cooldown_left: float = 0.0
 var _hit_targets: Dictionary = {}
 var _guard_visible: bool = false
 var _guard_direction: Vector2 = Vector2.RIGHT
+@onready var _sprite: Sprite2D = $Sprite2D
+@onready var _sprite_rest_position: Vector2 = _sprite.position
 func _init() -> void:
 	supports_guard = true
 
@@ -51,6 +54,7 @@ func _process(_delta: float) -> void:
 
 
 func _update_pose() -> void:
+	_sprite.position = _sprite_rest_position
 	if is_swinging:
 		var half_angle := deg_to_rad(swing_angle * 0.5)
 		var offset: float
@@ -65,7 +69,10 @@ func _update_pose() -> void:
 			return
 		global_rotation = _swing_direction.angle() + offset
 	elif _guard_visible:
-		global_rotation = _guard_direction.angle() + PI * 0.5
+		# Keep the blade tangent to defense, with its tip on the upper side.
+		global_rotation = _guard_direction.angle() - PI * 0.5 if _guard_direction.x >= 0.0 else _guard_direction.angle() + PI * 0.5
+		# Move only the sprite; aim, sector origin and guard coverage stay fixed.
+		_sprite.position += to_local(global_position + _guard_direction * guard_forward_offset)
 	else:
 		global_rotation = aim_direction.angle()
 
