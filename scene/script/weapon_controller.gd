@@ -1,123 +1,156 @@
 extends Node
-
+const Guard = preload("res://scene/script/components/guard_component.gd")
+const LocalInput = preload("res://scene/script/components/local_combat_input.gd")
+const Context = preload("res://scene/script/combat/attack_context.gd")
 const Feedback = preload("res://scene/script/combat_feedback.gd")
-
 signal weapon_changed(weapon: int)
 signal guard_changed(value: float, maximum: float)
-
 enum Weapon { GUN, SWORD }
-@export var max_guard: float = 100.0
-@export var block_cost: float = 20.0
-@export_range(0.1, 60.0) var guard_duration: float = 10.0
-@export_range(0.1, 60.0) var guard_recovery_duration: float = 15.0
-@export_range(10.0, 180.0) var guard_angle: float = 140.0
-
+var actor: Node2D
+var _guard = Guard.new()
+var _input = LocalInput.new()
+var _weapons: Dictionary = {}
 var current_weapon: int = Weapon.GUN
-var guard_value: float = 100.0
-var is_guarding: bool = false
 var aim_direction: Vector2 = Vector2.RIGHT
-@onready var _player: Player = get_parent()
-@onready var _gun: Node2D = $"../gun"
-@onready var _sword: Node2D = $"../Sword"
+@export var max_guard: float = 100.0:
+	get: return _guard.maximum
+	set(value): _guard.maximum = value
+@export var block_cost: float = 20.0:
+	get: return _guard.block_cost
+	set(value): _guard.block_cost = value
+@export var guard_duration: float = 10.0:
+	get: return _guard.duration
+	set(value): _guard.duration = value
+@export var guard_recovery_duration: float = 15.0:
+	get: return _guard.recovery_duration
+	set(value): _guard.recovery_duration = value
+@export var guard_angle: float = 140.0:
+	get: return _guard.angle
+	set(value): _guard.angle = value
+var guard_value: float:
+	get: return _guard.value
+	set(value): _guard.value = clampf(value, 0.0, max_guard)
+var is_guarding: bool:
+	get: return _guard.is_guarding
 
+func _init() -> void:
+	_guard.name = "GuardComponent"
+	_input.name = "LocalCombatInput"
+	add_child(_guard)
+	add_child(_input)
 
-func _ready() -> void:
-	guard_value = max_guard
+func configure(owner_actor: Node2D) -> void:
+	actor = owner_actor
+	_guard.configure(actor)
+	_input.configure(actor, self)
+	if not _guard.changed.is_connected(_on_guard_changed):
+		_guard.changed.connect(_on_guard_changed)
+		_guard.guard_changed.connect(_on_guard_state_changed)
+		_guard.blocked.connect(_on_blocked)
+
+func get_guard_component() -> Node:
+	return _guard
+
+func register_weapon(id: int, weapon: Node2D) -> void:
+	assert(is_instance_valid(actor), "Configure the weapon owner before registration")
+	assert(weapon.has_method("attack") and weapon.has_method("set_active"), "Weapon must implement WeaponBase")
+	if _weapons.has(id) and is_instance_valid(_weapons[id]): _weapons[id].set_active(false)
+	_weapons[id] = weapon
+	weapon.configure(actor, self)
+	weapon.aim(aim_direction)
 	refresh_equipped_weapon()
 
+func _current() -> Node2D:
+	return _weapons.get(current_weapon)
 
-func _unhandled_input(event: InputEvent) -> void:
-	if _player.is_dead or not _player.is_locally_controlled:
-		return
-	if event.is_action_pressed("weapon_next"):
-		equip_weapon((current_weapon + 1) % 2)
-		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("weapon_previous"):
-		equip_weapon((current_weapon + 1) % 2)
-		get_viewport().set_input_as_handled()
+func current_supports_guard() -> bool:
+	var weapon := _current()
+	return is_instance_valid(weapon) and weapon.supports_guard
 
+func get_aim_origin() -> Vector2:
+	var weapon := _current()
+	return weapon.global_position if is_instance_valid(weapon) else actor.global_position
 
-func _process(delta: float) -> void:
-	if _player.is_dead or not _player.is_locally_controlled:
-		return
-	var direction := _player.get_global_mouse_position() - _sword.global_position
-	if not direction.is_zero_approx():
-		aim_direction = direction.normalized()
-	var wants_guard := current_weapon == Weapon.SWORD and Input.is_action_pressed("block")
-	set_guarding(wants_guard, aim_direction)
-	if current_weapon == Weapon.SWORD and not wants_guard and Input.is_action_just_pressed("fire"):
-		_sword.start_swing(aim_direction)
-	recover_guard(delta)
+func aim(direction: Vector2) -> void:
+	if direction.is_zero_approx() or not direction.is_finite(): return
+	aim_direction = direction.normalized()
+	for weapon in _weapons.values():
+		if is_instance_valid(weapon): weapon.aim(aim_direction)
+	_guard.direction = aim_direction
+	_update_guard_visual()
 
+func attack(direction: Vector2) -> bool:
+	var weapon := _current()
+	if not is_instance_valid(actor) or actor.get("is_dead") == true or is_guarding or not is_instance_valid(weapon): return false
+	aim(direction)
+	return weapon.attack(aim_direction)
 
-func equip_weapon(weapon: int) -> void:
-	if weapon != Weapon.GUN and weapon != Weapon.SWORD:
-		return
+func equip_weapon(id: int) -> void:
+	if not _weapons.has(id) or not is_instance_valid(_weapons[id]): return
 	set_guarding(false)
-	_sword.cancel_attack()
-	current_weapon = weapon
+	for weapon in _weapons.values():
+		if is_instance_valid(weapon): weapon.cancel_attack()
+	current_weapon = id
 	refresh_equipped_weapon()
 	weapon_changed.emit(current_weapon)
 
+func cycle_weapon(step: int) -> void:
+	var ids: Array = _weapons.keys()
+	ids.sort()
+	if ids.is_empty(): return
+	var index := ids.find(current_weapon)
+	equip_weapon(ids[posmod(index + step, ids.size())])
 
 func refresh_equipped_weapon() -> void:
-	var alive := not _player.is_dead
-	_gun.visible = alive and current_weapon == Weapon.GUN
-	_gun.set_process(_gun.visible and _player.is_locally_controlled)
-	_sword.active = alive and current_weapon == Weapon.SWORD
-	_sword.visible = _sword.active
-
+	var alive: bool = is_instance_valid(actor) and actor.get("is_dead") != true
+	for id in _weapons:
+		if is_instance_valid(_weapons[id]): _weapons[id].set_active(alive and id == current_weapon)
+	_update_guard_visual()
 
 func set_guarding(enabled: bool, direction: Vector2 = Vector2.ZERO) -> void:
-	if not direction.is_zero_approx():
-		aim_direction = direction.normalized()
-	is_guarding = enabled and current_weapon == Weapon.SWORD and not _player.is_dead and guard_value > 0 and not _sword.is_swinging
-	_sword.set_guard_visual(is_guarding, aim_direction)
-
+	if not direction.is_zero_approx(): aim(direction)
+	var weapon := _current()
+	var allowed: bool = current_supports_guard() and not weapon.is_busy()
+	_guard.request_guard(enabled and allowed, aim_direction)
+	_update_guard_visual()
 
 func try_block(attack_origin: Vector2) -> bool:
-	if not is_guarding or _player.is_dead or guard_value <= 0:
-		return false
-	var toward_attack := (attack_origin - _player.global_position).normalized()
-	if aim_direction.dot(toward_attack) < cos(deg_to_rad(guard_angle * 0.5)):
-		return false
-	Feedback.spawn_guard(_player, toward_attack)
-	guard_value = maxf(guard_value - block_cost, 0.0)
-	guard_changed.emit(guard_value, max_guard)
-	if guard_value <= 0:
-		set_guarding(false)
-	return true
-
+	return _guard.try_block(Context.new(1.0, attack_origin))
 
 func recover_guard(delta: float) -> void:
-	if _player.is_dead:
-		return
-	if is_guarding:
-		guard_value = maxf(guard_value - max_guard * delta / maxf(guard_duration, 0.1), 0.0)
-		if is_zero_approx(guard_value):
-			guard_value = 0.0
-			set_guarding(false)
-		guard_changed.emit(guard_value, max_guard)
-		return
-	# Exhausted guard stays down until the player releases the button.
-	if current_weapon == Weapon.SWORD and Input.is_action_pressed("block"):
-		return
-	var recovered := minf(guard_value + max_guard * delta / maxf(guard_recovery_duration, 0.1), max_guard)
-	if is_equal_approx(recovered, max_guard):
-		recovered = max_guard
-	if not is_equal_approx(recovered, guard_value):
-		guard_value = recovered
-		guard_changed.emit(guard_value, max_guard)
+	# Compatibility entry point; only the adapter polls local Input.
+	if _input.enabled(): _guard.hold_requested = _input.is_guard_requested()
+	_guard.tick(delta)
+
+func _on_guard_changed(value: float, maximum: float) -> void:
+	guard_changed.emit(value, maximum)
+
+func _on_guard_state_changed(_enabled: bool) -> void:
+	_update_guard_visual()
+
+func _on_blocked(direction: Vector2) -> void:
+	Feedback.spawn_guard(actor, direction)
+
+func _update_guard_visual() -> void:
+	for id in _weapons:
+		var weapon = _weapons[id]
+		if is_instance_valid(weapon) and weapon.has_method("set_guard_visual"):
+			weapon.set_guard_visual(id == current_weapon and is_guarding, aim_direction)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _input.handle_event(event): get_viewport().set_input_as_handled()
+
+func _process(delta: float) -> void:
+	_input.tick(delta)
 
 func suspend() -> void:
 	set_guarding(false)
-	_sword.cancel_attack()
+	for weapon in _weapons.values():
+		if is_instance_valid(weapon): weapon.cancel_attack()
 	refresh_equipped_weapon()
-
 
 func reset_after_respawn() -> void:
-	guard_value = max_guard
-	set_guarding(false)
-	_sword.reset_combat_state()
+	_guard.reset_state()
+	for weapon in _weapons.values():
+		if is_instance_valid(weapon): weapon.reset_state()
 	refresh_equipped_weapon()
-	guard_changed.emit(guard_value, max_guard)

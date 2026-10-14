@@ -56,7 +56,7 @@ func _run() -> void:
 	var gun = player.get_node("gun")
 	gun.set_process(false)
 	Input.action_press("fire")
-	gun._process(0.0)
+	player.get_node("WeaponController")._process(0.0)
 	Input.action_release("fire")
 	var fired = get_nodes_in_group("bullet")
 	check(fired.size() == 1 and fired[0].get("shooter") == player, "Gun records the firing player on its projectile")

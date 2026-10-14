@@ -24,6 +24,12 @@ func _init() -> void:
 	add_child(_health)
 	add_child(_receiver)
 
+func get_guard_component() -> Node:
+	return $WeaponController.get_guard_component()
+
+func get_weapon_controller() -> Node:
+	return $WeaponController
+
 func get_motor() -> Node:
 	return _motor
 
@@ -125,7 +131,9 @@ func _ready() -> void:
 	_lifecycle.died.connect(_on_death)
 	_lifecycle.countdown_changed.connect(func(seconds: float): respawn_countdown_changed.emit(seconds))
 	_lifecycle.respawn_requested.connect(_on_respawn_requested)
-	$WeaponController.refresh_equipped_weapon()
+	$WeaponController.configure(self)
+	$WeaponController.register_weapon(0, $gun)
+	$WeaponController.register_weapon(1, $Sword)
 
 # 修复后的受伤冷却，不会死循环
 func hit_cooldown(delta:float)->void:

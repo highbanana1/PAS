@@ -1,4 +1,4 @@
-extends Node2D
+extends "res://scene/script/weapons/weapon_base.gd"
 const Context = preload("res://scene/script/combat/attack_context.gd")
 const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 
@@ -11,7 +11,6 @@ const Feedback = preload("res://scene/script/combat_feedback.gd")
 @export var recovery_duration: float = 0.11
 @export var attack_cooldown: float = 0.245
 
-var active: bool = false
 var is_swinging: bool = false
 var _swing_direction: Vector2 = Vector2.RIGHT
 var _swing_elapsed: float = 0.0
@@ -19,12 +18,21 @@ var _cooldown_left: float = 0.0
 var _hit_targets: Dictionary = {}
 var _guard_visible: bool = false
 var _guard_direction: Vector2 = Vector2.RIGHT
-@onready var _player: Player = get_parent()
-@onready var _weapons = $"../WeaponController"
+func _init() -> void:
+	supports_guard = true
+
+func attack(direction: Vector2) -> bool:
+	return start_swing(direction)
+
+func is_busy() -> bool:
+	return is_swinging
+
+func reset_state() -> void:
+	reset_combat_state()
 
 
 func start_swing(direction: Vector2) -> bool:
-	if not active or _player.is_dead or _weapons.is_guarding or is_swinging or _cooldown_left > 0:
+	if not can_attack() or (is_instance_valid(controller) and controller.is_guarding) or is_swinging or _cooldown_left > 0:
 		return false
 	_swing_direction = direction.normalized() if not direction.is_zero_approx() else Vector2.RIGHT
 	_swing_elapsed = 0.0
@@ -37,7 +45,7 @@ func start_swing(direction: Vector2) -> bool:
 
 
 func _process(_delta: float) -> void:
-	if not active or _player.is_dead:
+	if not active or (not is_instance_valid(actor) or actor.get("is_dead") == true):
 		return
 	_update_pose()
 	queue_redraw()
@@ -54,13 +62,13 @@ func _update_pose() -> void:
 			offset = lerpf(-half_angle, half_angle, _sweep_progress(_swing_elapsed))
 		else:
 			var progress := (_swing_elapsed - windup_duration - swing_duration) / maxf(recovery_duration, 0.001)
-			global_rotation = lerp_angle(_swing_direction.angle() + half_angle, _weapons.aim_direction.angle(), smoothstep(0.0, 1.0, progress))
+			global_rotation = lerp_angle(_swing_direction.angle() + half_angle, aim_direction.angle(), smoothstep(0.0, 1.0, progress))
 			return
 		global_rotation = _swing_direction.angle() + offset
 	elif _guard_visible:
 		global_rotation = _guard_direction.angle() + PI * 0.5
 	else:
-		global_rotation = _weapons.aim_direction.angle()
+		global_rotation = aim_direction.angle()
 
 
 func _sweep_progress(elapsed: float) -> float:
@@ -70,7 +78,7 @@ func _sweep_progress(elapsed: float) -> float:
 
 func _physics_process(delta: float) -> void:
 	_cooldown_left = maxf(_cooldown_left - delta, 0.0)
-	if not active or not is_swinging or _player.is_dead:
+	if not active or not is_swinging or (not is_instance_valid(actor) or actor.get("is_dead") == true):
 		return
 	var previous := _swing_elapsed
 	_swing_elapsed += delta
@@ -96,7 +104,7 @@ func _hit_sector(previous: float, current: float) -> void:
 	query.shape = sector
 	query.transform = Transform2D(_swing_direction.angle(), global_position)
 	query.collision_mask = 2 | 8
-	query.exclude = [_player.get_rid()]
+	query.exclude = [actor.get_rid()]
 	query.collide_with_areas = false
 	for hit in get_world_2d().direct_space_state.intersect_shape(query, 32):
 		var target = hit["collider"]
@@ -108,7 +116,7 @@ func _hit_sector(previous: float, current: float) -> void:
 		if not get_world_2d().direct_space_state.intersect_ray(ray).is_empty():
 			continue
 		_hit_targets[target.get_instance_id()] = true
-		var result: int = Receiver.deliver(target, Context.new(damage, global_position, _player, true))
+		var result: int = Receiver.deliver(target, Context.new(damage, global_position, actor, true))
 		if result == Context.Result.DAMAGED or result == Context.Result.KILLED:
 			Feedback.spawn_hit(target, target.global_position)
 
