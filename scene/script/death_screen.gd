@@ -1,6 +1,7 @@
 extends CanvasLayer
 
-var _player: Player
+var _actor: Node2D
+var _lifecycle: Node
 @onready var countdown: Label = %Countdown
 
 
@@ -15,27 +16,36 @@ func _ready() -> void:
 		label.add_theme_font_override("font", pixel_font)
 
 
-func bind_player(player: Player) -> void:
-	if is_instance_valid(_player):
-		_player.character_died.disconnect(_on_character_died)
-		_player.respawned.disconnect(hide)
-		_player.respawn_countdown_changed.disconnect(_update_countdown)
-	_player = null
-	hide()
-	if not is_instance_valid(player) or not player.is_locally_controlled:
-		return
-	_player = player
-	_player.character_died.connect(_on_character_died)
-	_player.respawned.connect(hide)
-	_player.respawn_countdown_changed.connect(_update_countdown)
-	if _player.is_dead:
-		_on_character_died()
+func bind_player(player: Node2D) -> void:
+	bind_actor(player)
 
+func bind_actor(actor: Node2D) -> void:
+	unbind_actor()
+	if not is_instance_valid(actor) or actor.get("is_locally_controlled") == false or not actor.has_method("get_respawn_component"): return
+	_actor = actor
+	_lifecycle = actor.get_respawn_component()
+	_lifecycle.died.connect(_on_character_died)
+	_lifecycle.countdown_changed.connect(_update_countdown)
+	_lifecycle.respawn_requested.connect(_on_respawn)
+	_actor.tree_exiting.connect(unbind_actor)
+	if _lifecycle.dead: _on_character_died()
+
+func unbind_actor() -> void:
+	if is_instance_valid(_lifecycle):
+		if _lifecycle.died.is_connected(_on_character_died): _lifecycle.died.disconnect(_on_character_died)
+		if _lifecycle.countdown_changed.is_connected(_update_countdown): _lifecycle.countdown_changed.disconnect(_update_countdown)
+		if _lifecycle.respawn_requested.is_connected(_on_respawn): _lifecycle.respawn_requested.disconnect(_on_respawn)
+	if is_instance_valid(_actor) and _actor.tree_exiting.is_connected(unbind_actor): _actor.tree_exiting.disconnect(unbind_actor)
+	_actor = null
+	_lifecycle = null
+	hide()
 
 func _on_character_died() -> void:
-	_update_countdown(_player.respawn_time_left)
+	_update_countdown(_lifecycle.time_left)
 	show()
 
+func _on_respawn(_position: Vector2) -> void:
+	hide()
 
 func _update_countdown(seconds_left: float) -> void:
 	countdown.text = str(maxi(ceili(seconds_left), 0))

@@ -2,7 +2,6 @@ extends "res://scene/script/weapons/weapon_base.gd"
 const Context = preload("res://scene/script/combat/attack_context.gd")
 const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 
-const Feedback = preload("res://scene/script/combat_feedback.gd")
 @export var damage: int = 2
 @export var attack_range: float = 36.0
 @export_range(10.0, 170.0) var swing_angle: float = 120.0
@@ -104,7 +103,7 @@ func _hit_sector(previous: float, current: float) -> void:
 	query.shape = sector
 	query.transform = Transform2D(_swing_direction.angle(), global_position)
 	query.collision_mask = 2 | 8
-	query.exclude = [actor.get_rid()]
+	query.exclude = [actor.get_rid()] if actor is CollisionObject2D else []
 	query.collide_with_areas = false
 	for hit in get_world_2d().direct_space_state.intersect_shape(query, 32):
 		var target = hit["collider"]
@@ -117,8 +116,7 @@ func _hit_sector(previous: float, current: float) -> void:
 			continue
 		_hit_targets[target.get_instance_id()] = true
 		var result: int = Receiver.deliver(target, Context.new(damage, global_position, actor, true))
-		if result == Context.Result.DAMAGED or result == Context.Result.KILLED:
-			Feedback.spawn_hit(target, target.global_position)
+		attack_resolved.emit(target, result)
 
 
 func set_guard_visual(enabled: bool, direction: Vector2) -> void:

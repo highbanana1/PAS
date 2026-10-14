@@ -44,12 +44,12 @@ Windows 通过隐藏的 Start-Process 等待真实退出，分别保存 stdout/s
 
 **Interfaces:** HealthComponent.apply_damage(amount: float) -> float、heal(amount: float) -> float、restore_full() -> void，changed(current, maximum)、depleted。AttackContext.new(amount, origin, source, blockable)，AttackResult={IGNORED,BLOCKED,DAMAGED,KILLED}。CombatReceiver.configure(actor, health, guard=null) -> void、receive_attack(context) -> int。
 
-- [ ] Write failing `test_combat_components.gd`: instantiated actors with arbitrary names each have independent health; 90-10=80, second actor=90; negative/NaN damage ignored, healing caps at maximum; lethal result KILLED emitted once, next attack IGNORED; enemy accepts damage without setting get_hited; normal projectile remains exactly one damage.
-- [ ] Run new test and confirm expected missing component/contract assertion fails; no accidental parse error counts as RED.
-- [ ] Implement health and attack objects, explicitly configure receivers. Keep take_damage/receive_attack/hurt/real_hp/health adapters. Existing bool receive_attack remains a compatibility adapter where true means blocked; new weapons use the explicit result interface.
-- [ ] Route sword and bullet through CombatReceiver; display hit flash only for DAMAGED/KILLED. Actors without receiver keep projectile collision deletion. Guard uses an explicit adapter until Task 4; contact damage remains blockable=false and retains cooldown.
-- [ ] Run new test plus full suite; expected all green, source whitespace check clean.
-- [ ] Commit `refactor: unify health and attack reception`。
+- [x] Write failing `test_combat_components.gd`: instantiated actors with arbitrary names each have independent health; 90-10=80, second actor=90; negative/NaN damage ignored, healing caps at maximum; lethal result KILLED emitted once, next attack IGNORED; enemy accepts damage without setting get_hited; normal projectile remains exactly one damage.
+- [x] Run new test and confirm expected missing component/contract assertion fails; no accidental parse error counts as RED.
+- [x] Implement health and attack objects, explicitly configure receivers. Keep take_damage/receive_attack/hurt/real_hp/health adapters. Existing bool receive_attack remains a compatibility adapter where true means blocked; new weapons use the explicit result interface.
+- [x] Route sword and bullet through CombatReceiver; display hit flash only for DAMAGED/KILLED. Actors without receiver keep projectile collision deletion. Guard uses an explicit adapter until Task 4; contact damage remains blockable=false and retains cooldown.
+- [x] Run new test plus full suite; expected all green, source whitespace check clean.
+- [x] Commit `refactor: unify health and attack reception`。
 
 ### Task 2: 单角色复活与通用携带/交付
 
@@ -57,12 +57,12 @@ Windows 通过隐藏的 Start-Process 等待真实退出，分别保存 stdout/s
 
 **Interfaces:** RespawnComponent.configure(timer: Timer, spawn: Vector2, delay: float)、die() -> bool、respawn(position: Vector2) -> bool；died/countdown_changed/respawn_requested signals，dead/time_left properties。CarryComponent.configure(actor)、try_pick_up(item) -> bool、drop()、deliver_to(receiver) -> bool。CarryableComponent.can_pick_up(actor) -> bool、attach_to(holder)、release()、transfer_to(receiver) -> bool。DeliveryReceiver.can_accept(item) -> bool、accept(item) -> bool。
 
-- [ ] Write failing lifecycle tests: two component instances keep independent dead/timer state; duplicate die returns false and does not extend countdown; carried item release at death preserves world position; freed carrier clears safely; delivered item cannot be reclaimed accidentally.
-- [ ] Run new test; expected assertions fail because lifecycle/carry implementations absent.
-- [ ] Extract dead state/timer operations; player adapter orchestrates collision, animation, weapons and health reset in original order. Enemy retains despawn death policy. Expose compatibility properties without duplicate state.
-- [ ] Extract carrying/receiving while keeping star Area2D touch logic and original-holder overlap protection. Explicitly configure actor/item/table references, preserve no-gravity rule and already-overlapping-table delivery.
-- [ ] Run lifecycle tests and full suite; especially original player identity, shared world, second death and death-zone re-entry assertions must remain green.
-- [ ] Commit `refactor: extract respawn and carrying components`。
+- [x] Write failing lifecycle tests: two component instances keep independent dead/timer state; duplicate die returns false and does not extend countdown; carried item release at death preserves world position; freed carrier clears safely; delivered item cannot be reclaimed accidentally.
+- [x] Run new test; expected assertions fail because lifecycle/carry implementations absent.
+- [x] Extract dead state/timer operations; player adapter orchestrates collision, animation, weapons and health reset in original order. Enemy retains despawn death policy. Expose compatibility properties without duplicate state.
+- [x] Extract carrying/receiving while keeping star Area2D touch logic and original-holder overlap protection. Explicitly configure actor/item/table references, preserve no-gravity rule and already-overlapping-table delivery.
+- [x] Run lifecycle tests and full suite; especially original player identity, shared world, second death and death-zone re-entry assertions must remain green.
+- [x] Commit `refactor: extract respawn and carrying components`。
 
 ### Task 3: 移动组件与本地输入边界
 
@@ -70,11 +70,11 @@ Windows 通过隐藏的 Start-Process 等待真实退出，分别保存 stdout/s
 
 **Interfaces:** CharacterMotor.configure(body: CharacterBody2D)、tick(delta: float, move_input: Vector2)、request_jump()、request_dash(direction: Vector2)、reset_state()；state properties can_dash/is_dashing/dash_dir/dash_timer/jump_count。Input is read only by player adapter; externally supplied commands can drive non-local actors.
 
-- [ ] Write failing real-motion tests with CharacterBody2D and floor: horizontal speed 150, jump impulse -400 with one jump until landing, dash speed 360 for 0.2 seconds, gravity suppressed only during dash, landing restores jump/dash. Verify two motors do not share state, reset clears velocity and restores readiness, non-local player ignores local Input but accepts explicit motor commands.
-- [ ] Run test; expected missing motor or command-path assertion failure.
-- [ ] Extract original movement ordering, including horizontal remembered dash direction and animation decisions. Actor calls move_and_slide once per physics step; motor contains no Input calls. Preserve exported/proxied legacy fields and original sprite/particle updates.
-- [ ] Run movement test and full suite, including dead player movement suppression.
-- [ ] Commit `refactor: separate character movement from input`。
+- [x] Write failing real-motion tests with CharacterBody2D and floor: horizontal speed 150, jump impulse -400 with one jump until landing, dash speed 360 for 0.2 seconds, gravity suppressed only during dash, landing restores jump/dash. Verify two motors do not share state, reset clears velocity and restores readiness, non-local player ignores local Input but accepts explicit motor commands.
+- [x] Run test; expected missing motor or command-path assertion failure.
+- [x] Extract original movement ordering, including horizontal remembered dash direction and animation decisions. Actor calls move_and_slide once per physics step; motor contains no Input calls. Preserve exported/proxied legacy fields and original sprite/particle updates.
+- [x] Run movement test and full suite, including dead player movement suppression.
+- [x] Commit `refactor: separate character movement from input`。
 
 ### Task 4: 武器协议、格挡组件与输入适配
 
@@ -82,13 +82,13 @@ Windows 通过隐藏的 Start-Process 等待真实退出，分别保存 stdout/s
 
 **Interfaces:** WeaponBase.configure(actor: Node2D)、set_active(enabled: bool)、aim(direction: Vector2)、attack(direction: Vector2) -> bool、cancel_attack()、reset_state()。WeaponController.register_weapon(id: int, weapon)、equip_weapon(id)、cycle_weapon(step)、aim(direction)、attack(direction) -> bool。GuardComponent.configure(actor)、request_guard(enabled, direction)、tick(delta)、try_block(context) -> bool、reset_state()；changed/guard_changed/blocked signals。
 
-- [ ] Write failing tests: configure gun/sword under arbitrary containers; third test weapon can register/switch/attack without controller special casing; remote controller never consumes local Input; external attack request works. Directional guard and clock are independent per instance, 600 steps at 1/60 exhaust the bar at 10 seconds, empty-to-full 15 seconds; inactive/dead cannot attack; cancelled windup never hits; large step crossing active sweep cannot miss its sector.
-- [ ] Run new test, verify absent common contract/decoupling fails.
-- [ ] Extract guard state and original time/cost logic; controller proxies compatibility methods/properties and updates component only once per frame. Blocked signal drives firework feedback via presentation adapter.
-- [ ] Implement WeaponBase and migrate gun/sword without changing timings, geometry, texture transforms or damage. Keep start_swing/reset_combat_state compatibility aliases. Controller receives explicit weapon refs/registrations, never assumes ../Sword or Player. Configure by actor adapter after all nodes are ready.
-- [ ] Move scroll/mouse handling to LocalCombatInput, leave old controller _unhandled_input/_process test-facing entry points as adapters during migration; their only input responsibility is delegated to input adapter, gameplay operations remain callable without Input.
-- [ ] Run weapon test and entire suite; no change to right-side UI, exclusive gun/sword or remote-input tests.
-- [ ] Commit `refactor: unify weapon and guard components`。
+- [x] Write failing tests: configure gun/sword under arbitrary containers; third test weapon can register/switch/attack without controller special casing; remote controller never consumes local Input; external attack request works. Directional guard and clock are independent per instance, 600 steps at 1/60 exhaust the bar at 10 seconds, empty-to-full 15 seconds; inactive/dead cannot attack; cancelled windup never hits; large step crossing active sweep cannot miss its sector.
+- [x] Run new test, verify absent common contract/decoupling fails.
+- [x] Extract guard state and original time/cost logic; controller proxies compatibility methods/properties and updates component only once per frame. Blocked signal drives firework feedback via presentation adapter.
+- [x] Implement WeaponBase and migrate gun/sword without changing timings, geometry, texture transforms or damage. Keep start_swing/reset_combat_state compatibility aliases. Controller receives explicit weapon refs/registrations, never assumes ../Sword or Player. Configure by actor adapter after all nodes are ready.
+- [x] Move scroll/mouse handling to LocalCombatInput, leave old controller _unhandled_input/_process test-facing entry points as adapters during migration; their only input responsibility is delegated to input adapter, gameplay operations remain callable without Input.
+- [x] Run weapon test and entire suite; no change to right-side UI, exclusive gun/sword or remote-input tests.
+- [x] Commit `refactor: unify weapon and guard components`。
 
 ### Task 5: UI 绑定、表现分离、使用说明与最终验证
 
@@ -96,12 +96,12 @@ Windows 通过隐藏的 Start-Process 等待真实退出，分别保存 stdout/s
 
 **Interfaces:** UI adapters bind_actor(actor)/unbind_actor(); bind_player remains compatibility alias. Feedback public show_hit/show_block aliases preserve existing spawn helpers. Signals originate at state-owning components; no UI method changes game state.
 
-- [ ] Write failing binding tests: bind A then B and update A, HUD still reflects B; repeated binding does not duplicate callbacks; null/freed/remote actor hides UI; binding immediately displays current HP/guard/death timer; two independent actors and arbitrary hierarchy work with explicit references.
-- [ ] Run new test and confirm stale binding/old coupling is caught.
-- [ ] Implement signal disconnection/reconnection and typed component access. Preserve exact fonts, positions, resource styles and local-only display. Presentation consumes result signals, keeps weak target reference and automatic cleanup, never mutates Engine.time_scale or tree pause.
-- [ ] Document responsibility, public functions, scene setup, state ownership, local-command boundary and a minimal second actor/new weapon example; explicitly state actual network authority/replication is not implemented.
-- [ ] Run all tests, full editor import/parse and actual render checks of idle, guarding, windup, sweep, hit, death/countdown and respawn. Compare baseline scene styles/resources/weapon transforms and ensure all gameplay assertions remain green.
-- [ ] Commit `refactor: decouple component presentation and document reuse`。
+- [x] Write failing binding tests: bind A then B and update A, HUD still reflects B; repeated binding does not duplicate callbacks; null/freed/remote actor hides UI; binding immediately displays current HP/guard/death timer; two independent actors and arbitrary hierarchy work with explicit references.
+- [x] Run new test and confirm stale binding/old coupling is caught.
+- [x] Implement signal disconnection/reconnection and typed component access. Preserve exact fonts, positions, resource styles and local-only display. Presentation consumes result signals, keeps weak target reference and automatic cleanup, never mutates Engine.time_scale or tree pause.
+- [x] Document responsibility, public functions, scene setup, state ownership, local-command boundary and a minimal second actor/new weapon example; explicitly state actual network authority/replication is not implemented.
+- [x] Run all tests, full editor import/parse and actual render checks of idle, guarding, windup, sweep, hit, death/countdown and respawn. Compare baseline scene styles/resources/weapon transforms and ensure all gameplay assertions remain green.
+- [x] Commit `refactor: decouple component presentation and document reuse`。
 
 ## Final Review and Delivery
 

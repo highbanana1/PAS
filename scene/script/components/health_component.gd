@@ -11,6 +11,11 @@ func configure(maximum_health: float) -> void:
 	maximum = maximum_health
 	current = maximum
 
+func set_maximum(value: float) -> void:
+	if not is_finite(value) or value <= 0.0: return
+	maximum = value
+	set_current(current)
+
 func set_current(value: float) -> void:
 	if not is_finite(value): return
 	var was_alive := current > 0.0

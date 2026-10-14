@@ -6,6 +6,8 @@ const Context = preload("res://scene/script/combat/attack_context.gd")
 const Lifecycle = preload("res://scene/script/components/respawn_component.gd")
 const Carry = preload("res://scene/script/components/carry_component.gd")
 const Motor = preload("res://scene/script/components/character_motor.gd")
+const Presentation = preload("res://scene/script/components/combat_presentation.gd")
+var _presentation = Presentation.new()
 var _motor = Motor.new()
 var _lifecycle = Lifecycle.new()
 var _carry = Carry.new()
@@ -13,6 +15,8 @@ var _health = Health.new()
 var _receiver = Receiver.new()
 
 func _init() -> void:
+	_presentation.name = "CombatPresentation"
+	add_child(_presentation)
 	_motor.name = "CharacterMotor"
 	add_child(_motor)
 	_lifecycle.name = "RespawnComponent"
@@ -82,7 +86,9 @@ const JUMP_VELOCITY = -400.0
 @onready var dash: GPUParticles2D = $DashParticles
 
 # 血量配置
-@export var max_hp: float = 90
+@export var max_hp: float = 90:
+	get: return _health.maximum
+	set(value): _health.set_maximum(value)
 var real_hp: float:
 	get: return _health.current
 	set(value): _health.set_current(value)
@@ -134,6 +140,7 @@ func _ready() -> void:
 	$WeaponController.configure(self)
 	$WeaponController.register_weapon(0, $gun)
 	$WeaponController.register_weapon(1, $Sword)
+	_presentation.configure(self, $WeaponController, get_guard_component())
 
 # 修复后的受伤冷却，不会死循环
 func hit_cooldown(delta:float)->void:

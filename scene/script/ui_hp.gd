@@ -1,36 +1,42 @@
 extends CanvasLayer
-
-# 绑定三根分段血条
 @export var bar1: TextureProgressBar
 @export var bar2: TextureProgressBar
 @export var bar3: TextureProgressBar
-# 单段血量上限
 @export var single_bar_hp: float = 30.0
-# 玩家节点引用
-@export var player: CharacterBody2D
+@export var player: Node2D
+var _health: Node
+var _actor: Node2D
 
 func _ready() -> void:
-	# 绑定玩家血量变化信号，和示例截图逻辑完全一致
-	player.health_changed.connect(update_three_bars)
-	# 初始化三根条最大数值
 	bar1.max_value = single_bar_hp
 	bar2.max_value = single_bar_hp
 	bar3.max_value = single_bar_hp
-	# 初始化一次显示
+	bind_actor(player)
+
+func bind_actor(actor: Node2D) -> void:
+	unbind_actor()
+	if not is_instance_valid(actor) or actor.get("is_locally_controlled") == false or not actor.has_method("get_health_component"): return
+	_actor = actor
+	player = actor
+	_health = actor.get_health_component()
+	_health.changed.connect(_on_health_changed)
+	_actor.tree_exiting.connect(unbind_actor)
+	update_three_bars()
+	show()
+
+func unbind_actor() -> void:
+	if is_instance_valid(_health) and _health.changed.is_connected(_on_health_changed): _health.changed.disconnect(_on_health_changed)
+	if is_instance_valid(_actor) and _actor.tree_exiting.is_connected(unbind_actor): _actor.tree_exiting.disconnect(unbind_actor)
+	_health = null
+	_actor = null
+	hide()
+
+func _on_health_changed(_current: float, _maximum: float) -> void:
 	update_three_bars()
 
-# 核心更新函数（对应截图里的update_health）
 func update_three_bars() -> void:
-	var total_max = single_bar_hp * 3
-	var current_hp = player.real_hp
-	var val = clamp(current_hp, 0, total_max)
-	
-	# 分段计算三段进度
-	var seg3 = clamp(val - single_bar_hp * 2, 0, single_bar_hp)
-	var seg2 = clamp(val - single_bar_hp, 0, single_bar_hp)
-	var seg1 = clamp(val, 0, single_bar_hp)
-	
-	# 赋值给三根血条
-	bar3.value = seg3
-	bar2.value = seg2
-	bar1.value = seg1
+	if not is_instance_valid(_health): return
+	var value: float = clampf(_health.current, 0.0, single_bar_hp * 3.0)
+	bar1.value = clampf(value, 0.0, single_bar_hp)
+	bar2.value = clampf(value - single_bar_hp, 0.0, single_bar_hp)
+	bar3.value = clampf(value - single_bar_hp * 2.0, 0.0, single_bar_hp)

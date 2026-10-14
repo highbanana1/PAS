@@ -78,3 +78,10 @@ func _draw() -> void:
 		draw_line(start.round(), finish.round(), color, 1.5)
 	if progress < 0.4:
 		draw_rect(Rect2(-1.5, -1.5, 3.0, 3.0), Color(1.0, 1.0, 1.0, 1.0 - progress))
+
+
+static func show_hit(target: Node2D, point: Vector2) -> void:
+	spawn_hit(target, point)
+
+static func show_block(actor: Node2D, direction: Vector2) -> void:
+	spawn_guard(actor, direction)

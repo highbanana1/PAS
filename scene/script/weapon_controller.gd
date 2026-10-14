@@ -2,7 +2,7 @@ extends Node
 const Guard = preload("res://scene/script/components/guard_component.gd")
 const LocalInput = preload("res://scene/script/components/local_combat_input.gd")
 const Context = preload("res://scene/script/combat/attack_context.gd")
-const Feedback = preload("res://scene/script/combat_feedback.gd")
+signal attack_resolved(target: Node2D, result: int)
 signal weapon_changed(weapon: int)
 signal guard_changed(value: float, maximum: float)
 enum Weapon { GUN, SWORD }
@@ -46,7 +46,6 @@ func configure(owner_actor: Node2D) -> void:
 	if not _guard.changed.is_connected(_on_guard_changed):
 		_guard.changed.connect(_on_guard_changed)
 		_guard.guard_changed.connect(_on_guard_state_changed)
-		_guard.blocked.connect(_on_blocked)
 
 func get_guard_component() -> Node:
 	return _guard
@@ -54,9 +53,13 @@ func get_guard_component() -> Node:
 func register_weapon(id: int, weapon: Node2D) -> void:
 	assert(is_instance_valid(actor), "Configure the weapon owner before registration")
 	assert(weapon.has_method("attack") and weapon.has_method("set_active"), "Weapon must implement WeaponBase")
-	if _weapons.has(id) and is_instance_valid(_weapons[id]): _weapons[id].set_active(false)
+	if _weapons.has(id) and is_instance_valid(_weapons[id]):
+		var previous = _weapons[id]
+		previous.set_active(false)
+		if previous.attack_resolved.is_connected(_on_attack_resolved): previous.attack_resolved.disconnect(_on_attack_resolved)
 	_weapons[id] = weapon
 	weapon.configure(actor, self)
+	if not weapon.attack_resolved.is_connected(_on_attack_resolved): weapon.attack_resolved.connect(_on_attack_resolved)
 	weapon.aim(aim_direction)
 	refresh_equipped_weapon()
 
@@ -128,8 +131,8 @@ func _on_guard_changed(value: float, maximum: float) -> void:
 func _on_guard_state_changed(_enabled: bool) -> void:
 	_update_guard_visual()
 
-func _on_blocked(direction: Vector2) -> void:
-	Feedback.spawn_guard(actor, direction)
+func _on_attack_resolved(target: Node2D, result: int) -> void:
+	attack_resolved.emit(target, result)
 
 func _update_guard_visual() -> void:
 	for id in _weapons:

@@ -1,5 +1,6 @@
 class_name WeaponBase
 extends Node2D
+signal attack_resolved(target: Node2D, result: int)
 var actor: Node2D
 var controller: Node
 var active: bool = false
