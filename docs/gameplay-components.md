@@ -19,7 +19,9 @@
 | CarryableComponent | 物品跟随谁、落下/交付与重拾限制 | configure、can_pick_up、attach_to、release、transfer_to、follow、settle_pickup |
 | DeliveryReceiver | 接受一个物品 | configure、can_accept、accept；delivered 信号 |
 | LocalCombatInput | 读取本机鼠标和滚轮 | configure、tick、handle_event；仅由本地角色调用 |
-| CombatPresentation | 订阅攻击/格挡事件并显示短特效 | configure；不修改战斗状态或全局时间 |
+| CombatPresentation | 订阅格挡事件并显示火花 | configure；不修改战斗状态或全局时间 |
+| PlayerHurtPresentation | 玩家专用闪白、视觉后仰和短闪烁 | configure、reset_state；订阅本人 receiver，死亡立即清理 |
+| EnemyHurtPresentation | 敌人专用闪白和轻微压缩回弹 | configure、reset_state；子弹与剑共用本人受击入口 |
 
 Actor 的 `get_health_component()`、`get_combat_receiver()`、`get_respawn_component()`、`get_motor()`、`get_carry_component()`、`get_guard_component()`、`get_weapon_controller()` 暴露已装配实例。
 兼容属性 real_hp、max_hp、is_dead、spawn_position、respawn_delay、current_winning_point 及移动状态均转发到组件，没有第二份状态。
@@ -94,7 +96,7 @@ actor.get_weapon_controller().attack(direction)
 
 生命、死亡、战斗 UI 支持 bind_actor(actor) / unbind_actor()，重新绑定会先断开旧信号，删除目标会自动隐藏。
 bind_player 为兼容别名（战斗/死亡界面）。界面只显示本地角色。
-CombatPresentation 订阅控制器的 attack_resolved 和格挡组件的 blocked；命中/格挡只生成短暂效果，不影响暂停或 Engine.time_scale。
+CombatPresentation 只订阅格挡组件的 blocked。玩家和敌人各自有独立的受击表现组件，订阅自己的 CombatReceiver.attack_received；敌人的子弹与剑统一走同一动画，攻击者不再重复播放目标受击。玩家只改变贴图材质、角度和透明度，不改角色位置、速度、控制或无敌规则。死亡立即恢复玩家贴图状态。两套表现都不影响暂停或 Engine.time_scale。
 组件本身不直接寻找 UI 节点或显示特效。
 
 ## 验证

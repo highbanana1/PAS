@@ -2,10 +2,14 @@ extends CharacterBody2D
 class_name Enemy
 const Health = preload("res://scene/script/components/health_component.gd")
 const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
+const HurtPresentation = preload("res://scene/script/components/enemy_hurt_presentation.gd")
+var _hurt_presentation = HurtPresentation.new()
 var _health = Health.new()
 var _receiver = Receiver.new()
 
 func _init() -> void:
+	_hurt_presentation.name = "EnemyHurtPresentation"
+	add_child(_hurt_presentation)
 	_health.configure(5)
 	_health.name = "HealthComponent"
 	_receiver.name = "CombatReceiver"
@@ -15,6 +19,10 @@ func _init() -> void:
 func _ready() -> void:
 	_receiver.configure(self, _health)
 	_health.depleted.connect(queue_free)
+	_hurt_presentation.configure(self, _receiver, animated_sprite)
+
+func get_hurt_presentation() -> Node:
+	return _hurt_presentation
 
 func get_combat_receiver() -> Node:
 	return _receiver

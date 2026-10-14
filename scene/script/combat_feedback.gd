@@ -11,12 +11,12 @@ var _target: WeakRef
 var _flash: Sprite2D
 
 
-static func spawn_hit(target: Node2D, point: Vector2) -> void:
+static func spawn_hit(target: Node2D, point: Vector2, source: AnimatedSprite2D = null) -> void:
 	var effect = load("res://scene/script/combat_feedback.gd").new()
 	effect.kind = "hit"
 	target.get_tree().root.add_child(effect)
 	effect.global_position = point
-	var source := target.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
+	if source == null: source = target.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
 	if source != null and source.sprite_frames != null:
 		effect._target = weakref(source)
 		effect._flash = Sprite2D.new()

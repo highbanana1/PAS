@@ -11,10 +11,14 @@ var _presentation = Presentation.new()
 var _motor = Motor.new()
 var _lifecycle = Lifecycle.new()
 var _carry = Carry.new()
+const HurtPresentation = preload("res://scene/script/components/player_hurt_presentation.gd")
+var _hurt_presentation = HurtPresentation.new()
 var _health = Health.new()
 var _receiver = Receiver.new()
 
 func _init() -> void:
+	_hurt_presentation.name = "PlayerHurtPresentation"
+	add_child(_hurt_presentation)
 	_presentation.name = "CombatPresentation"
 	add_child(_presentation)
 	_motor.name = "CharacterMotor"
@@ -42,6 +46,9 @@ func get_respawn_component() -> Node:
 
 func get_carry_component() -> Node:
 	return _carry
+
+func get_hurt_presentation() -> Node:
+	return _hurt_presentation
 
 func get_combat_receiver() -> Node:
 	return _receiver
@@ -143,6 +150,7 @@ func _ready() -> void:
 	$WeaponController.register_weapon(0, $gun)
 	$WeaponController.register_weapon(1, $Sword)
 	_presentation.configure(self, $WeaponController, get_guard_component())
+	_hurt_presentation.configure(self, _receiver, animated_sprite)
 
 # 修复后的受伤冷却，不会死循环
 func hit_cooldown(delta: float) -> void:
