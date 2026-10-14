@@ -1,6 +1,8 @@
 extends Node2D
 
 const SPEED= 700
+var shooter: Node2D = null
+@export var damage: int = 1
 
 # Called when the node enters the scene tree for the first time.
 func _ready() -> void:
@@ -22,11 +24,17 @@ func _on_area_2d_area_entered(area: Area2D) -> void:
 
 
 func _on_area_2d_body_entered(body: Node2D) -> void:
-	
-	if body.is_in_group("enemy"):
+	if is_queued_for_deletion():
+		return
+	if is_instance_valid(shooter) and body == shooter:
+		return
+	if body.has_method("receive_attack"):
+		# Use the incoming travel direction, not the shooter's current position.
+		var attack_origin := global_position - global_transform.x.normalized() * 64.0
+		body.receive_attack(damage, attack_origin, true)
+	elif body.is_in_group("enemy"):
 		body.get_hited = true
-		body.hurt(1)
-		queue_free()
-	pass
+		body.hurt(damage)
+	queue_free()
 func die()->void:
 	queue_free()

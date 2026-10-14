@@ -1,0 +1,73 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scene/script/death_screen.gd" id="1_script"]
+[ext_resource type="FontFile" path="res://asset/fonts/fusion-pixel-12px-monospaced-zh_hans.otf.woff2" id="2_font"]
+
+[node name="DeathScreen" type="CanvasLayer"]
+layer = 20
+visible = false
+script = ExtResource("1_script")
+
+[node name="Overlay" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture_filter = 1
+
+[node name="Center" type="CenterContainer" parent="Overlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Content" type="VBoxContainer" parent="Overlay/Center"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Overlay/Center/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.34, 0.34, 1)
+theme_override_colors/font_shadow_color = Color(0.08, 0.02, 0.02, 1)
+theme_override_constants/shadow_offset_x = 3
+theme_override_constants/shadow_offset_y = 3
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 36
+text = "你已阵亡"
+horizontal_alignment = 1
+
+[node name="RespawnLine" type="HBoxContainer" parent="Overlay/Center/Content"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="Countdown" type="Label" parent="Overlay/Center/Content/RespawnLine"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.85, 0.42, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 24
+text = "5"
+
+[node name="Caption" type="Label" parent="Overlay/Center/Content/RespawnLine"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 24
+text = "秒后复活"

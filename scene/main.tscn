@@ -13,6 +13,10 @@
 [ext_resource type="Texture2D" uid="uid://dvy0yyio8qro6" path="res://asset/pic/HPlineFill.png" id="8_k65ib"]
 [ext_resource type="Texture2D" uid="uid://cmg0tudkcs1qq" path="res://asset/pic/HPlineIn.png" id="9_wscrc"]
 
+[ext_resource type="PackedScene" path="res://scene/death_screen.tscn" id="13_death_screen"]
+
+[ext_resource type="PackedScene" path="res://scene/combat_hud.tscn" id="14_combat_hud"]
+
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_wp4xf"]
 texture = ExtResource("2_v0l8b")
 0:0/0 = 0
@@ -318,9 +322,7 @@ texture_under = ExtResource("8_k65ib")
 texture_over = ExtResource("7_tqoya")
 texture_progress = ExtResource("9_wscrc")
 
-[node name="Timer" type="Timer" parent="." unique_id=579124217]
-wait_time = 10.0
 
-[connection signal="character_died" from="CharacterBody2D" to="." method="_on_character_body_2d_character_died"]
-[connection signal="body_entered" from="WinningPoint" to="WinningPoint" method="_on_body_entered"]
-[connection signal="timeout" from="Timer" to="." method="_on_timer_timeout"]
+[node name="DeathScreen" parent="." instance=ExtResource("13_death_screen")]
+
+[node name="CombatHUD" parent="." instance=ExtResource("14_combat_hud")]

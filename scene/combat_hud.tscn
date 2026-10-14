@@ -1,0 +1,181 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://scene/script/combat_hud.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://asset/pic/gun.png" id="2_gun"]
+[ext_resource type="Texture2D" path="res://asset/pic/sword.png" id="3_sword"]
+[ext_resource type="Texture2D" path="res://asset/pic/shield.svg" id="4_shield"]
+[ext_resource type="FontFile" path="res://asset/fonts/fusion-pixel-12px-monospaced-zh_hans.otf.woff2" id="5_font"]
+
+[sub_resource type="AtlasTexture" id="Atlas_gun"]
+atlas = ExtResource("2_gun")
+region = Rect2(192, 768, 1856, 640)
+
+[sub_resource type="AtlasTexture" id="Atlas_sword"]
+atlas = ExtResource("3_sword")
+region = Rect2(576, 768, 1088, 448)
+
+[sub_resource type="StyleBoxFlat" id="Style_selected"]
+bg_color = Color(0.035, 0.09, 0.16, 0.88)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.34, 0.75, 1, 1)
+content_margin_left = 6.0
+content_margin_top = 5.0
+content_margin_right = 6.0
+content_margin_bottom = 5.0
+
+[sub_resource type="StyleBoxFlat" id="Style_idle"]
+bg_color = Color(0.025, 0.035, 0.055, 0.65)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.2, 0.24, 0.3, 0.9)
+content_margin_left = 6.0
+content_margin_top = 5.0
+content_margin_right = 6.0
+content_margin_bottom = 5.0
+
+[sub_resource type="StyleBoxFlat" id="Style_guard_track"]
+bg_color = Color(0.035, 0.075, 0.13, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.1, 0.2, 0.35, 1)
+
+[sub_resource type="StyleBoxFlat" id="Style_guard_fill"]
+bg_color = Color(0.16, 0.52, 1, 1)
+border_width_top = 2
+border_width_bottom = 2
+border_color = Color(0.48, 0.8, 1, 1)
+
+[node name="CombatHUD" type="CanvasLayer"]
+layer = 3
+script = ExtResource("1_script")
+selected_style = SubResource("Style_selected")
+idle_style = SubResource("Style_idle")
+
+[node name="Overlay" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture_filter = 1
+
+[node name="GuardHUD" type="HBoxContainer" parent="Overlay"]
+layout_mode = 0
+offset_left = 58.0
+offset_top = 96.0
+offset_right = 238.0
+offset_bottom = 128.0
+mouse_filter = 2
+theme_override_constants/separation = 8
+
+[node name="ShieldIcon" type="TextureRect" parent="Overlay/GuardHUD"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("4_shield")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="GuardBar" type="ProgressBar" parent="Overlay/GuardHUD"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 16)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+mouse_filter = 2
+theme_override_styles/background = SubResource("Style_guard_track")
+theme_override_styles/fill = SubResource("Style_guard_fill")
+step = 0.0
+value = 100.0
+show_percentage = false
+
+[node name="RightBar" type="VBoxContainer" parent="Overlay"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -84.0
+offset_top = -76.0
+offset_right = -20.0
+offset_bottom = 76.0
+grow_horizontal = 0
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+
+[node name="GunSlot" type="PanelContainer" parent="Overlay/RightBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_selected")
+
+[node name="Content" type="VBoxContainer" parent="Overlay/RightBar/GunSlot"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="GunIcon" type="TextureRect" parent="Overlay/RightBar/GunSlot/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 24)
+layout_mode = 2
+mouse_filter = 2
+texture = SubResource("Atlas_gun")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Overlay/RightBar/GunSlot/Content"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = "枪"
+horizontal_alignment = 1
+
+[node name="SwordSlot" type="PanelContainer" parent="Overlay/RightBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_idle")
+
+[node name="Content" type="VBoxContainer" parent="Overlay/RightBar/SwordSlot"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="SwordIcon" type="TextureRect" parent="Overlay/RightBar/SwordSlot/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 24)
+layout_mode = 2
+mouse_filter = 2
+texture = SubResource("Atlas_sword")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Overlay/RightBar/SwordSlot/Content"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = "剑"
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="Overlay/RightBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.85, 0.95, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = "滚轮切换"
+horizontal_alignment = 1

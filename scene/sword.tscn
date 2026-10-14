@@ -1,0 +1,18 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scene/script/sword.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://asset/pic/sword.png" id="2_image"]
+
+[sub_resource type="AtlasTexture" id="Atlas_sword"]
+atlas = ExtResource("2_image")
+region = Rect2(576, 768, 1088, 448)
+
+[node name="Sword" type="Node2D"]
+z_index = 2
+texture_filter = 1
+script = ExtResource("1_script")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(-224, -224)
+texture = SubResource("Atlas_sword")
+centered = false

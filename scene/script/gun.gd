@@ -15,6 +15,7 @@ func _process(delta: float) -> void:
 		
 	if Input.is_action_just_pressed("fire"):
 		var bullet_instance = BULLET.instantiate()
-		get_tree().root.add_child(bullet_instance)
+		bullet_instance.shooter = get_parent()
 		bullet_instance.global_position =muzzle.global_position
-		bullet_instance.rotation = rotation
+		bullet_instance.rotation = global_rotation
+		get_tree().root.add_child(bullet_instance)
