@@ -5,12 +5,16 @@ const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 const Context = preload("res://scene/script/combat/attack_context.gd")
 const Lifecycle = preload("res://scene/script/components/respawn_component.gd")
 const Carry = preload("res://scene/script/components/carry_component.gd")
+const Motor = preload("res://scene/script/components/character_motor.gd")
+var _motor = Motor.new()
 var _lifecycle = Lifecycle.new()
 var _carry = Carry.new()
 var _health = Health.new()
 var _receiver = Receiver.new()
 
 func _init() -> void:
+	_motor.name = "CharacterMotor"
+	add_child(_motor)
 	_lifecycle.name = "RespawnComponent"
 	_carry.name = "CarryComponent"
 	add_child(_lifecycle)
@@ -19,6 +23,9 @@ func _init() -> void:
 	_receiver.name = "CombatReceiver"
 	add_child(_health)
 	add_child(_receiver)
+
+func get_motor() -> Node:
+	return _motor
 
 func get_respawn_component() -> Node:
 	return _lifecycle
@@ -80,10 +87,18 @@ var current_winning_point: Area2D:
 	get: return _carry.item
 	set(value): _carry.item = value
 
-var can_dash: bool = true
-var is_dashing: bool=false
-var dash_dir: Vector2= Vector2.RIGHT
-var dash_timer: float=0.0
+var can_dash: bool:
+	get: return _motor.can_dash
+	set(value): _motor.can_dash = value
+var is_dashing: bool:
+	get: return _motor.is_dashing
+	set(value): _motor.is_dashing = value
+var dash_dir: Vector2:
+	get: return _motor.dash_dir
+	set(value): _motor.dash_dir = value
+var dash_timer: float:
+	get: return _motor.dash_timer
+	set(value): _motor.dash_timer = value
 var get_hit: bool =false
 
 @export var hitable: bool = true
@@ -92,9 +107,12 @@ var get_hit: bool =false
 var hitcooltimer: float = 0.0
 
 
-@export var jump_count = 1
+var jump_count: int:
+	get: return _motor.jump_count
+	set(value): _motor.jump_count = value
 
 func _ready() -> void:
+	_motor.configure(self)
 	_health.configure(max_hp)
 	_health.changed.connect(_on_health_changed)
 	_health.depleted.connect(func(): _die_logic(0.0))
@@ -135,7 +153,7 @@ func _die_logic(health: float) -> void:
 	if health <= 0.0: _lifecycle.die()
 
 func _on_death() -> void:
-	velocity = Vector2.ZERO
+	_motor.reset_state()
 	get_hit = false
 	hitable = false
 	is_dashing = false
@@ -166,11 +184,7 @@ func _on_respawn_requested(at_position: Vector2) -> void:
 	hitable = true
 	hitcooltimer = 0.0
 	damage_timer = 0.0
-	is_dashing = false
-	can_dash = true
-	dash_timer = 0.0
-	dash_dir = Vector2.RIGHT
-	jump_count = 1
+	_motor.reset_state()
 	dash.emitting = false
 	current_winning_point = null
 	set_deferred("collision_layer", _alive_collision_layer)
@@ -186,95 +200,27 @@ func _on_respawn_requested(at_position: Vector2) -> void:
 func _on_respawn_timer_timeout() -> void:
 	respawn(spawn_position)
 		
-func _dash_logic(delta: float)-> void:
-	var input_dir: Vector2 = Vector2(
-		Input.get_axis("left","right"),
-		Input.get_axis("up","down")
-	).normalized()
-	
-	if input_dir.x != 0:
-		dash_dir.x = input_dir.x
-		
-	if can_dash and Input.is_action_just_pressed("dash"):
-		var final_dash_dir: Vector2 = dash_dir
-		if input_dir.y !=0 and input_dir.x ==0:
-			final_dash_dir.x=0
-		final_dash_dir.y=input_dir.y
-		
-		can_dash = false
-		is_dashing = true
-		dash_timer = DASH_TIME
-		
-		velocity = final_dash_dir * DASH_AMT
-	
-	if is_dashing:
-		dash_timer -=delta
-		if dash_timer <= 0.0:
-			is_dashing= false
-
 func _physics_process(delta: float) -> void:
-	if is_dead:
+	if is_dead or not is_locally_controlled:
 		return
-	if not is_locally_controlled:
-		return
-	# 每秒自动扣1血测试
-	#damage_timer += delta
-	#if damage_timer >= 1.0:
-	#	take_damage(1)
-	#	damage_timer = 0.0
-
-	# 受伤触发冷却计时
-	if get_hit and hitcooltimer <= 0:
+	if get_hit and hitcooltimer <= 0.0:
 		hitcooltimer = 3.0
-
-	# Add the gravity.
-	if not is_on_floor():
-		if !is_dashing:
-			velocity += get_gravity() * delta
-
-	#重制跳跃次数
-	if is_on_floor() and jump_count == 0:
-		jump_count = 1
-	if is_on_floor():
-		if !is_dashing and !can_dash:
-			can_dash= true
-		
-	# Handle jump.
-	if Input.is_action_just_pressed("jump") and jump_count != 0:
-		velocity.y = JUMP_VELOCITY
-		jump_count -= 1
-
-	# Get the input direction and handle the movement/deceleration.
 	var direction := Input.get_axis("left", "right")
-	if direction != 0 and is_on_floor():
-		animated_sprite.play("run")
-	else:
-		animated_sprite.play("idle")
-	
-	#dashing
-	if !is_dashing:
-		dash.emitting = false
-		if direction:
-			velocity.x = direction * SPEED
-		else:
-			velocity.x = move_toward(velocity.x, 0, SPEED)
-	else: 
-		#dash动画
+	animated_sprite.play("run" if direction != 0.0 and is_on_floor() else "idle")
+	if is_dashing:
 		animated_sprite.play("dash")
-		#dash残影
 		dash.emitting = true
-		#翻转dash粒子
-		dash.scale.x = -1 if direction < 0 else 1
-	_dash_logic(delta)
-	
-	#根据移动方向翻转精灵朝向
-	animated_sprite.flip_h = direction < 0
-	
+		dash.scale.x = -1 if direction < 0.0 else 1
+	else:
+		dash.emitting = false
+	var move_input := Vector2(direction, Input.get_axis("up", "down"))
+	if Input.is_action_just_pressed("jump"): _motor.request_jump()
+	if Input.is_action_just_pressed("dash"): _motor.request_dash(move_input)
+	_motor.tick(delta, move_input)
+	animated_sprite.flip_h = direction < 0.0
 	hit_cooldown(delta)
 	_die_logic(real_hp)
-	if is_dead:
-		return
-	move_and_slide()
+	if not is_dead: move_and_slide()
 
 
 func _on_timer_timeout() -> void:
