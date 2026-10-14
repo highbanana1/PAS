@@ -1,4 +1,6 @@
 extends Node2D
+const Context = preload("res://scene/script/combat/attack_context.gd")
+const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 
 const Feedback = preload("res://scene/script/combat_feedback.gd")
 @export var damage: int = 2
@@ -106,13 +108,9 @@ func _hit_sector(previous: float, current: float) -> void:
 		if not get_world_2d().direct_space_state.intersect_ray(ray).is_empty():
 			continue
 		_hit_targets[target.get_instance_id()] = true
-		if target.has_method("receive_attack"):
-			if not target.receive_attack(damage, global_position, true):
-				Feedback.spawn_hit(target, target.global_position)
-		elif target.is_in_group("enemy"):
+		var result: int = Receiver.deliver(target, Context.new(damage, global_position, _player, true))
+		if result == Context.Result.DAMAGED or result == Context.Result.KILLED:
 			Feedback.spawn_hit(target, target.global_position)
-			target.get_hited = true
-			target.hurt(damage)
 
 
 func set_guard_visual(enabled: bool, direction: Vector2) -> void:

@@ -1,4 +1,6 @@
 extends Node2D
+const Context = preload("res://scene/script/combat/attack_context.gd")
+const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 
 const SPEED= 700
 var shooter: Node2D = null
@@ -28,13 +30,9 @@ func _on_area_2d_body_entered(body: Node2D) -> void:
 		return
 	if is_instance_valid(shooter) and body == shooter:
 		return
-	if body.has_method("receive_attack"):
-		# Use the incoming travel direction, not the shooter's current position.
-		var attack_origin := global_position - global_transform.x.normalized() * 64.0
-		body.receive_attack(damage, attack_origin, true)
-	elif body.is_in_group("enemy"):
-		body.get_hited = true
-		body.hurt(damage)
+	# Capture incoming direction, independent of the shooter's later position.
+	var attack_origin := global_position - global_transform.x.normalized() * 64.0
+	Receiver.deliver(body, Context.new(damage, attack_origin, shooter, true))
 	queue_free()
 func die()->void:
 	queue_free()

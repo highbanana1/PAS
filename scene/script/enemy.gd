@@ -1,9 +1,33 @@
 extends CharacterBody2D
 class_name Enemy
+const Health = preload("res://scene/script/components/health_component.gd")
+const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
+var _health = Health.new()
+var _receiver = Receiver.new()
+
+func _init() -> void:
+	_health.configure(5)
+	_health.name = "HealthComponent"
+	_receiver.name = "CombatReceiver"
+	add_child(_health)
+	add_child(_receiver)
+
+func _ready() -> void:
+	_receiver.configure(self, _health)
+	_health.depleted.connect(queue_free)
+
+func get_combat_receiver() -> Node:
+	return _receiver
+
+func get_health_component() -> Node:
+	return _health
+
 
 @export var speed: float = 30.0
 var direction: float = 1.0
-var health: int = 5
+var health: int:
+	get: return int(_health.current)
+	set(value): _health.set_current(value)
 var get_hited: bool = false
 @onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D;
 @onready var wall_detection_ray: RayCast2D = $walldetection
@@ -49,12 +73,9 @@ func run(speed: float)->void:
 func _on_area_2d_area_entered(area: Area2D) -> void:
 		pass
 
-func hurt(damage: int)-> void:
-	if health > 0 and get_hited:
-		health-=damage
-		get_hited = false
-	if health <=0:
-		queue_free()
+func hurt(damage: int) -> void:
+	get_hited = false
+	_health.apply_damage(damage)
 
 func _on_area_2d_body_entered(body: Node2D) -> void:
 	if body.is_in_group("player"):

@@ -1,5 +1,26 @@
 extends CharacterBody2D
 class_name Player
+const Health = preload("res://scene/script/components/health_component.gd")
+const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
+const Context = preload("res://scene/script/combat/attack_context.gd")
+var _health = Health.new()
+var _receiver = Receiver.new()
+
+func _init() -> void:
+	_health.name = "HealthComponent"
+	_receiver.name = "CombatReceiver"
+	add_child(_health)
+	add_child(_receiver)
+
+func get_combat_receiver() -> Node:
+	return _receiver
+
+func get_health_component() -> Node:
+	return _health
+
+func _on_health_changed(_current: float, _maximum: float) -> void:
+	health_changed.emit()
+
 # 在Player脚本顶部加信号定义
 signal health_changed()
 signal character_died()
@@ -29,7 +50,9 @@ const JUMP_VELOCITY = -400.0
 
 # 血量配置
 @export var max_hp: float = 90
-var real_hp: float = max_hp
+var real_hp: float:
+	get: return _health.current
+	set(value): _health.set_current(value)
 # 每秒扣血计时器
 var damage_timer: float = 0.0
 
@@ -50,6 +73,10 @@ var hitcooltimer: float = 0.0
 @export var jump_count = 1
 
 func _ready() -> void:
+	_health.configure(max_hp)
+	_health.changed.connect(_on_health_changed)
+	_health.depleted.connect(func(): _die_logic(0.0))
+	_receiver.configure(self, _health, $WeaponController.try_block)
 	spawn_position = global_position
 	_alive_collision_layer = collision_layer
 	_alive_collision_mask = collision_mask
@@ -70,23 +97,13 @@ func hit_cooldown(delta:float)->void:
 			get_hit = false
 
 # 受伤函数
-func take_damage(dmg: float):
-	if is_dead:
-		return
-	real_hp = clamp(real_hp - dmg, 0, max_hp)
-	emit_signal("health_changed")
-	_die_logic(real_hp)
+func take_damage(dmg: float) -> void:
+	_receiver.receive_attack(Context.new(dmg, global_position, null, false))
 
 
 func receive_attack(dmg: float, attack_origin: Vector2, blockable: bool = true) -> bool:
-	if is_dead:
-		return false
-	# Future melee enemies should call this entry point for blockable attacks.
-	# Body/contact damage continues to use take_damage(), so it cannot be blocked.
-	if blockable and $WeaponController.try_block(attack_origin):
-		return true
-	take_damage(dmg)
-	return false
+	# Compatibility API: true only means blocked. New attacks use typed results.
+	return _receiver.receive_attack(Context.new(dmg, attack_origin, null, blockable)) == Context.Result.BLOCKED
 
 func _die_logic(health: float)-> void:
 	if health > 0 or is_dead:
