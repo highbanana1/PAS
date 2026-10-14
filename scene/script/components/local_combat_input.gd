@@ -16,6 +16,13 @@ func is_guard_requested() -> bool:
 
 func handle_event(event: InputEvent) -> bool:
 	if not enabled(): return false
+	if event is InputEventKey and event.echo: return false
+	if event.is_action_pressed("weapon_slot_1"):
+		if controller.current_weapon != 0: controller.equip_weapon(0)
+		return true
+	if event.is_action_pressed("weapon_slot_2"):
+		if controller.current_weapon != 1: controller.equip_weapon(1)
+		return true
 	if event.is_action_pressed("weapon_next"):
 		controller.cycle_weapon(1)
 		return true

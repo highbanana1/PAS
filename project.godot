@@ -83,6 +83,15 @@ weapon_previous={
 ]
 }
 
+weapon_slot_1={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":49,"script":null)]
+}
+weapon_slot_2={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":50,"script":null)]
+}
+
 [layer_names]
 
 2d_physics/layer_1="world"

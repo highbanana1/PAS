@@ -98,84 +98,192 @@ step = 0.0
 value = 100.0
 show_percentage = false
 
-[node name="RightBar" type="VBoxContainer" parent="Overlay"]
+[node name="BottomBar" type="HBoxContainer" parent="Overlay"]
+unique_name_in_owner = true
 layout_mode = 1
-anchor_left = 1.0
-anchor_top = 0.5
-anchor_right = 1.0
-anchor_bottom = 0.5
-offset_left = -84.0
-offset_top = -76.0
-offset_right = -20.0
-offset_bottom = 76.0
-grow_horizontal = 0
-grow_vertical = 2
+anchor_left = 0.05
+anchor_top = 1.0
+anchor_right = 0.95
+anchor_bottom = 1.0
+offset_top = -94.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
 mouse_filter = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 0
 
-[node name="GunSlot" type="PanelContainer" parent="Overlay/RightBar"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(64, 56)
+[node name="Weapon1" type="VBoxContainer" parent="Overlay/BottomBar"]
 layout_mode = 2
-mouse_filter = 2
-theme_override_styles/panel = SubResource("Style_selected")
-
-[node name="Content" type="VBoxContainer" parent="Overlay/RightBar/GunSlot"]
-layout_mode = 2
+size_flags_horizontal = 3
 mouse_filter = 2
 theme_override_constants/separation = 4
 
-[node name="GunIcon" type="TextureRect" parent="Overlay/RightBar/GunSlot/Content"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(44, 24)
+[node name="Heading" type="Label" parent="Overlay/BottomBar/Weapon1"]
+custom_minimum_size = Vector2(0, 14)
 layout_mode = 2
 mouse_filter = 2
-texture = SubResource("Atlas_gun")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Label" type="Label" parent="Overlay/RightBar/GunSlot/Content"]
-layout_mode = 2
-theme_override_fonts/font = ExtResource("5_font")
-theme_override_font_sizes/font_size = 12
-text = "枪"
-horizontal_alignment = 1
-
-[node name="SwordSlot" type="PanelContainer" parent="Overlay/RightBar"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(64, 56)
-layout_mode = 2
-mouse_filter = 2
-theme_override_styles/panel = SubResource("Style_idle")
-
-[node name="Content" type="VBoxContainer" parent="Overlay/RightBar/SwordSlot"]
-layout_mode = 2
-mouse_filter = 2
-theme_override_constants/separation = 4
-
-[node name="SwordIcon" type="TextureRect" parent="Overlay/RightBar/SwordSlot/Content"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(44, 24)
-layout_mode = 2
-mouse_filter = 2
-texture = SubResource("Atlas_sword")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Label" type="Label" parent="Overlay/RightBar/SwordSlot/Content"]
-layout_mode = 2
-theme_override_fonts/font = ExtResource("5_font")
-theme_override_font_sizes/font_size = 12
-text = "剑"
-horizontal_alignment = 1
-
-[node name="Hint" type="Label" parent="Overlay/RightBar"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.8, 0.85, 0.95, 1)
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_offset_x = 1
 theme_override_constants/shadow_offset_y = 1
 theme_override_fonts/font = ExtResource("5_font")
 theme_override_font_sizes/font_size = 12
-text = "滚轮切换"
+text = "武器"
+
+[node name="GunSlot" type="PanelContainer" parent="Overlay/BottomBar/Weapon1"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_selected")
+
+[node name="Content" type="VBoxContainer" parent="Overlay/BottomBar/Weapon1/GunSlot"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="GunIcon" type="TextureRect" parent="Overlay/BottomBar/Weapon1/GunSlot/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 24)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+texture = SubResource("Atlas_gun")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Overlay/BottomBar/Weapon1/GunSlot/Content"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = "1  枪"
 horizontal_alignment = 1
+
+[node name="Weapon2" type="VBoxContainer" parent="Overlay/BottomBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="Heading" type="Label" parent="Overlay/BottomBar/Weapon2"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = ""
+
+[node name="SwordSlot" type="PanelContainer" parent="Overlay/BottomBar/Weapon2"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_idle")
+
+[node name="Content" type="VBoxContainer" parent="Overlay/BottomBar/Weapon2/SwordSlot"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="SwordIcon" type="TextureRect" parent="Overlay/BottomBar/Weapon2/SwordSlot/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 24)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+texture = SubResource("Atlas_sword")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Overlay/BottomBar/Weapon2/SwordSlot/Content"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = "2  剑"
+horizontal_alignment = 1
+
+[node name="Item1" type="VBoxContainer" parent="Overlay/BottomBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="Heading" type="Label" parent="Overlay/BottomBar/Item1"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = "物品"
+
+[node name="ItemSlot1" type="PanelContainer" parent="Overlay/BottomBar/Item1"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_idle")
+
+[node name="Item2" type="VBoxContainer" parent="Overlay/BottomBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="Heading" type="Label" parent="Overlay/BottomBar/Item2"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = ""
+
+[node name="ItemSlot2" type="PanelContainer" parent="Overlay/BottomBar/Item2"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_idle")
+
+[node name="Item3" type="VBoxContainer" parent="Overlay/BottomBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="Heading" type="Label" parent="Overlay/BottomBar/Item3"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = ""
+
+[node name="ItemSlot3" type="PanelContainer" parent="Overlay/BottomBar/Item3"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_idle")

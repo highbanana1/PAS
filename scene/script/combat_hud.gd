@@ -6,6 +6,19 @@ var _controller: Node
 @onready var guard_bar: ProgressBar = %GuardBar
 @onready var gun_slot: PanelContainer = %GunSlot
 @onready var sword_slot: PanelContainer = %SwordSlot
+@onready var _bottom_bar: HBoxContainer = %BottomBar
+
+func _ready() -> void:
+	get_viewport().size_changed.connect(_resize_hotbar)
+	_resize_hotbar()
+
+func _resize_hotbar() -> void:
+	var width := clampf(roundf(get_viewport().get_visible_rect().size.x * 0.1), 56.0, 80.0)
+	var height := roundf(width * 0.875)
+	for slot: Control in [gun_slot, sword_slot, %ItemSlot1, %ItemSlot2, %ItemSlot3]:
+		slot.custom_minimum_size = Vector2(width, height)
+	_bottom_bar.offset_top = -20.0 - height - 18.0
+
 
 func bind_player(player: Node2D) -> void:
 	bind_actor(player)

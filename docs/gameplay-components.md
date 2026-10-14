@@ -69,13 +69,13 @@ func attack(direction: Vector2) -> bool:
 
 将实例添加到任意挂载节点，再调用 `controller.register_weapon(2, weapon)`。
 控制器会配置 actor/controller 引用并管理激活状态；`controller.cycle_weapon(1)` 按注册的数字 ID 循环。
-枪和剑分别使用 0 和 1；当前右侧界面仍展示这两件武器，新武器的图标槽需另加 UI。
+枪和剑分别使用 0 和 1；玩家按数字键 1 切枪、2 切剑，也可继续用滚轮切换。当前底部显示两个武器槽和三个空物品槽；物品槽不绑定携带状态，新武器的图标槽需另加 UI。
 新的武器不应读取 Input；设置 supports_guard 可启用格挡；持续攻击应实现 is_busy、cancel_attack 和 reset_state。
 武器必须在树中并完成自身资源初始化后注册；控制器须先 configure(actor)。
 
 ## 外部命令与未来联机边界
 
-本地移动输入只由 Player 适配层读取，鼠标/滚轮只由 LocalCombatInput 读取。
+本地移动输入只由 Player 适配层读取，鼠标、滚轮和武器数字键只由 LocalCombatInput 读取。
 本地战斗输入需要显式设置 `is_locally_controlled=true`。普通 Node2D/敌人没有该标记时默认不接收本机鼠标与滚轮；设置 false 同样会阻止这些本地输入，但不阻止明确的命令调用：
 
 ```gdscript
