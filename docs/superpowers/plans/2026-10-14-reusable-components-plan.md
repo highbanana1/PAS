@@ -105,6 +105,6 @@ Windows 通过隐藏的 Start-Process 等待真实退出，分别保存 stdout/s
 
 ## Final Review and Delivery
 
-- [ ] Fresh whole-branch read-only review against stable baseline and spec, focusing on the five Review Focus cases. Fix critical/important issues with reproducing tests and one final green full-suite run.
-- [ ] Verify develop remains 8b81567, working tree clean, commits on refactor/reusable-components only. Keep branch locally; do not merge or push without user instruction.
-- [ ] Report component entry points, verification evidence and any deferred limitations. Actual future multiplayer behavior needs later authority/synchronization work and integration testing.
+- [x] Fresh whole-branch read-only review against stable baseline and spec, focusing on the five Review Focus cases. Fix critical/important issues with reproducing tests and one final green full-suite run.
+- [x] Verify develop remains 8b81567, working tree clean, commits on refactor/reusable-components only. Keep branch locally; do not merge or push without user instruction.
+- [x] Report component entry points, verification evidence and any deferred limitations. Actual future multiplayer behavior needs later authority/synchronization work and integration testing.

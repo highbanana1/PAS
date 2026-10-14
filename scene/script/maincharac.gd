@@ -208,7 +208,6 @@ func _on_respawn_requested(at_position: Vector2) -> void:
 	animated_sprite.play("idle")
 	is_dead = false
 	$WeaponController.reset_after_respawn()
-	health_changed.emit()
 	respawned.emit()
 
 

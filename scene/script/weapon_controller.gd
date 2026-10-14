@@ -64,7 +64,8 @@ func register_weapon(id: int, weapon: Node2D) -> void:
 	refresh_equipped_weapon()
 
 func _current() -> Node2D:
-	return _weapons.get(current_weapon)
+	var weapon = _weapons.get(current_weapon)
+	return weapon if is_instance_valid(weapon) and not weapon.is_queued_for_deletion() else null
 
 func current_supports_guard() -> bool:
 	var weapon := _current()
@@ -98,10 +99,14 @@ func equip_weapon(id: int) -> void:
 	weapon_changed.emit(current_weapon)
 
 func cycle_weapon(step: int) -> void:
+	for id in _weapons.keys():
+		var weapon = _weapons[id]
+		if not is_instance_valid(weapon) or weapon.is_queued_for_deletion(): _weapons.erase(id)
 	var ids: Array = _weapons.keys()
 	ids.sort()
 	if ids.is_empty(): return
 	var index := ids.find(current_weapon)
+	if index < 0: index = -1 if step >= 0 else 0
 	equip_weapon(ids[posmod(index + step, ids.size())])
 
 func refresh_equipped_weapon() -> void:

@@ -44,6 +44,7 @@ func tick(delta: float, move_input: Vector2) -> void:
 	if direction.x != 0.0: dash_dir.x = direction.x
 	if _dash_requested and can_dash:
 		var final_direction := dash_dir
+		if _requested_direction.x != 0.0: final_direction.x = _requested_direction.x
 		if _requested_direction.y != 0.0 and _requested_direction.x == 0.0: final_direction.x = 0.0
 		final_direction.y = _requested_direction.y
 		can_dash = false

@@ -9,7 +9,7 @@ func configure(owner_actor: Node2D, weapons: Node) -> void:
 	controller = weapons
 
 func enabled() -> bool:
-	return is_instance_valid(actor) and actor.get("is_dead") != true and actor.get("is_locally_controlled") != false
+	return is_instance_valid(actor) and actor.get("is_dead") != true and actor.get("is_locally_controlled") == true
 
 func is_guard_requested() -> bool:
 	return enabled() and controller.current_supports_guard() and Input.is_action_pressed("block")

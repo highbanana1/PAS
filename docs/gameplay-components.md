@@ -76,7 +76,7 @@ func attack(direction: Vector2) -> bool:
 ## 外部命令与未来联机边界
 
 本地移动输入只由 Player 适配层读取，鼠标/滚轮只由 LocalCombatInput 读取。
-设置 `is_locally_controlled=false` 可阻止这些本地输入影响角色，但不阻止明确的命令调用：
+本地战斗输入需要显式设置 `is_locally_controlled=true`。普通 Node2D/敌人没有该标记时默认不接收本机鼠标与滚轮；设置 false 同样会阻止这些本地输入，但不阻止明确的命令调用：
 
 ```gdscript
 actor.get_motor().request_jump()
