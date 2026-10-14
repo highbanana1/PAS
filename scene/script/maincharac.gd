@@ -3,14 +3,28 @@ class_name Player
 const Health = preload("res://scene/script/components/health_component.gd")
 const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 const Context = preload("res://scene/script/combat/attack_context.gd")
+const Lifecycle = preload("res://scene/script/components/respawn_component.gd")
+const Carry = preload("res://scene/script/components/carry_component.gd")
+var _lifecycle = Lifecycle.new()
+var _carry = Carry.new()
 var _health = Health.new()
 var _receiver = Receiver.new()
 
 func _init() -> void:
+	_lifecycle.name = "RespawnComponent"
+	_carry.name = "CarryComponent"
+	add_child(_lifecycle)
+	add_child(_carry)
 	_health.name = "HealthComponent"
 	_receiver.name = "CombatReceiver"
 	add_child(_health)
 	add_child(_receiver)
+
+func get_respawn_component() -> Node:
+	return _lifecycle
+
+func get_carry_component() -> Node:
+	return _carry
 
 func get_combat_receiver() -> Node:
 	return _receiver
@@ -27,17 +41,23 @@ signal character_died()
 signal respawned()
 signal respawn_countdown_changed(seconds_left: float)
 
-@export var respawn_delay: float = 5.0
+@export var respawn_delay: float = 5.0:
+	get: return _lifecycle.delay
+	set(value): _lifecycle.delay = value
 @export var is_locally_controlled: bool = true
-var is_dead: bool = false
-var spawn_position: Vector2
+var is_dead: bool:
+	get: return _lifecycle.dead
+	set(value): _lifecycle.dead = value
+var spawn_position: Vector2:
+	get: return _lifecycle.spawn_position
+	set(value): _lifecycle.spawn_position = value
 var _alive_collision_layer: int
 var _alive_collision_mask: int
 @onready var respawn_timer: Timer = $RespawnTimer
 
 var respawn_time_left: float:
 	get:
-		return respawn_timer.time_left
+		return _lifecycle.time_left
 
 const DASH_AMT: float= 360.0
 const DASH_TIME: float= 0.2
@@ -56,7 +76,9 @@ var real_hp: float:
 # 每秒扣血计时器
 var damage_timer: float = 0.0
 
-var current_winning_point: Area2D
+var current_winning_point: Area2D:
+	get: return _carry.item
+	set(value): _carry.item = value
 
 var can_dash: bool = true
 var is_dashing: bool=false
@@ -80,7 +102,11 @@ func _ready() -> void:
 	spawn_position = global_position
 	_alive_collision_layer = collision_layer
 	_alive_collision_mask = collision_mask
-	respawn_timer.timeout.connect(_on_respawn_timer_timeout)
+	_carry.configure(self)
+	_lifecycle.configure(respawn_timer, global_position, respawn_delay)
+	_lifecycle.died.connect(_on_death)
+	_lifecycle.countdown_changed.connect(func(seconds: float): respawn_countdown_changed.emit(seconds))
+	_lifecycle.respawn_requested.connect(_on_respawn_requested)
 	$WeaponController.refresh_equipped_weapon()
 
 # 修复后的受伤冷却，不会死循环
@@ -105,10 +131,10 @@ func receive_attack(dmg: float, attack_origin: Vector2, blockable: bool = true) 
 	# Compatibility API: true only means blocked. New attacks use typed results.
 	return _receiver.receive_attack(Context.new(dmg, attack_origin, null, blockable)) == Context.Result.BLOCKED
 
-func _die_logic(health: float)-> void:
-	if health > 0 or is_dead:
-		return
-	is_dead = true
+func _die_logic(health: float) -> void:
+	if health <= 0.0: _lifecycle.die()
+
+func _on_death() -> void:
 	velocity = Vector2.ZERO
 	get_hit = false
 	hitable = false
@@ -116,9 +142,7 @@ func _die_logic(health: float)-> void:
 	dash_timer = 0.0
 	dash.emitting = false
 	$Timer.stop()
-	if is_instance_valid(current_winning_point):
-		current_winning_point.call("drop_from_carrier")
-	current_winning_point = null
+	_carry.drop()
 	set_deferred("collision_layer", 0)
 	set_deferred("collision_mask", 0)
 	animated_sprite.hide()
@@ -126,15 +150,14 @@ func _die_logic(health: float)-> void:
 	$gun.set_process(false)
 	$WeaponController.suspend()
 	# Each player owns a timer; dying never pauses or reloads the shared world.
-	respawn_timer.start(maxf(respawn_delay, 0.05))
 	character_died.emit()
 	respawn_countdown_changed.emit(respawn_timer.time_left)
 
 
 func respawn(at_position: Vector2) -> void:
-	if not is_dead:
-		return
-	respawn_timer.stop()
+	_lifecycle.respawn(at_position)
+
+func _on_respawn_requested(at_position: Vector2) -> void:
 	$Timer.stop()
 	global_position = at_position
 	velocity = Vector2.ZERO
@@ -191,7 +214,6 @@ func _dash_logic(delta: float)-> void:
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
-		respawn_countdown_changed.emit(respawn_timer.time_left)
 		return
 	if not is_locally_controlled:
 		return

@@ -1,68 +1,38 @@
 extends Area2D
+const Carryable = preload("res://scene/script/components/carryable_component.gd")
+@export var float_offset_y: float = -30.0
+var _carryable = Carryable.new()
+var is_picked: bool:
+	get: return is_instance_valid(_carryable.holder)
+var ref: Node2D:
+	get: return _carryable.holder
 
-@export var float_offset_y: float = -30
+func _init() -> void:
+	_carryable.name = "CarryableComponent"
+	add_child(_carryable)
 
-var is_picked: bool = false
-var ref: Node2D = null
-# Former carriers must leave the pickup area after revival before re-entering.
-var _released_carriers: Dictionary = {}
-
+func get_carryable_component() -> Node:
+	return _carryable
 
 func _ready() -> void:
+	_carryable.configure(self, float_offset_y)
 	global_position = Vector2(100, -100)
 	body_entered.connect(_on_player_touch)
 
-
 func _process(_delta: float) -> void:
-	if is_picked and is_instance_valid(ref):
-		global_position = ref.global_position + Vector2(0, float_offset_y)
-		global_position.y += sin(Time.get_ticks_msec() * 0.003) * 2.5
-
+	_carryable.offset_y = float_offset_y
+	_carryable.follow()
 
 func _physics_process(_delta: float) -> void:
-	for carrier_id in _released_carriers.keys():
-		var entry: Dictionary = _released_carriers[carrier_id]
-		var carrier: Node2D = entry["body"].get_ref() as Node2D
-		if not is_instance_valid(carrier):
-			_released_carriers.erase(carrier_id)
-		elif carrier.get("is_dead") == true:
-			entry["settle_frames"] = 2
-		elif entry["settle_frames"] > 0:
-			# Collision filters and overlap lists update in separate physics steps.
-			entry["settle_frames"] -= 1
-		elif not overlaps_body(carrier):
-			_released_carriers.erase(carrier_id)
-
+	_carryable.settle_pickup()
 
 func _on_player_touch(body: Node2D) -> void:
-	if is_picked or not body.is_in_group("player"):
-		return
-	if body.get("is_dead") == true:
-		return
-	if _released_carriers.has(body.get_instance_id()):
-		return
-	is_picked = true
-	ref = body
-	body.set("current_winning_point", self)
-
+	if body.is_in_group("player") and body.has_method("get_carry_component"):
+		body.get_carry_component().try_pick_up(self)
 
 func drop_from_carrier() -> void:
-	if not is_picked or not is_instance_valid(ref) or not ref.is_in_group("player"):
-		return
-	global_position = ref.global_position
-	_released_carriers[ref.get_instance_id()] = {"body": weakref(ref), "settle_frames": 2}
-	ref.set("current_winning_point", null)
-	ref = null
-	is_picked = false
-
+	_carryable.release()
 
 func deliver_to(table: Area2D) -> bool:
-	if not is_picked or not is_instance_valid(ref):
-		return false
-	if not table.is_in_group("table") or not ref.is_in_group("player"):
-		return false
-	if ref.get("current_winning_point") != self:
-		return false
-	ref.set("current_winning_point", null)
-	ref = table
-	return true
+	if not is_instance_valid(table) or not table.has_method("get_delivery_receiver"): return false
+	return table.get_delivery_receiver().accept(self)

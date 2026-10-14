@@ -1,24 +1,26 @@
 extends Area2D
-
+const Delivery = preload("res://scene/script/components/delivery_receiver.gd")
+var _delivery = Delivery.new()
 var win_countdown: bool = false
-var wp: Area2D = null
+var wp: Area2D:
+	get: return _delivery.item
 
+func _init() -> void:
+	_delivery.name = "DeliveryReceiver"
+	add_child(_delivery)
+
+func _ready() -> void:
+	_delivery.configure(self)
+
+func get_delivery_receiver() -> Node:
+	return _delivery
 
 func _physics_process(_delta: float) -> void:
-	if is_instance_valid(wp):
-		return
-	# Also accept a star picked up while the player is already touching the table.
+	if is_instance_valid(wp): return
 	for body in get_overlapping_bodies():
 		_on_body_entered(body)
-		if is_instance_valid(wp):
-			break
-
+		if is_instance_valid(wp): break
 
 func _on_body_entered(body: Node2D) -> void:
-	if is_instance_valid(wp) or not body.is_in_group("player"):
-		return
-	var carried_star: Area2D = body.get("current_winning_point")
-	if not is_instance_valid(carried_star):
-		return
-	if carried_star.has_method("deliver_to") and carried_star.call("deliver_to", self):
-		wp = carried_star
+	if not body.is_in_group("player") or not body.has_method("get_carry_component"): return
+	body.get_carry_component().deliver_to(_delivery)
