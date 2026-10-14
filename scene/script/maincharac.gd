@@ -13,10 +13,14 @@ var _lifecycle = Lifecycle.new()
 var _carry = Carry.new()
 const HurtPresentation = preload("res://scene/script/components/player_hurt_presentation.gd")
 var _hurt_presentation = HurtPresentation.new()
+const HealthItems = preload("res://scene/script/components/health_item_component.gd")
+var _health_items = HealthItems.new()
 var _health = Health.new()
 var _receiver = Receiver.new()
 
 func _init() -> void:
+	_health_items.name = "HealthItems"
+	add_child(_health_items)
 	_hurt_presentation.name = "PlayerHurtPresentation"
 	add_child(_hurt_presentation)
 	_presentation.name = "CombatPresentation"
@@ -52,6 +56,9 @@ func get_hurt_presentation() -> Node:
 
 func get_combat_receiver() -> Node:
 	return _receiver
+
+func get_health_item_component() -> Node:
+	return _health_items
 
 func get_health_component() -> Node:
 	return _health
@@ -93,9 +100,12 @@ const JUMP_VELOCITY = -400.0
 @onready var dash: GPUParticles2D = $DashParticles
 
 # 血量配置
-@export var max_hp: float = 90:
+const MAX_HEALTH_CELLS: int = 8
+@export_range(1, 8, 1) var starting_health_cells: int = 5
+@export_range(1.0, 1000.0, 1.0, "or_greater") var health_per_cell: float = 30.0
+var max_hp: float:
 	get: return _health.maximum
-	set(value): _health.set_maximum(value)
+	set(value): _health.set_maximum(minf(value, health_per_cell * MAX_HEALTH_CELLS))
 var real_hp: float:
 	get: return _health.current
 	set(value): _health.set_current(value)
@@ -119,6 +129,7 @@ var dash_timer: float:
 	get: return _motor.dash_timer
 	set(value): _motor.dash_timer = value
 var get_hit: bool =false
+var _pending_contact: RefCounted
 
 @export var hitable: bool = true
 ## Contact-hit invincibility in seconds. Zero disables this protection.
@@ -133,8 +144,10 @@ var jump_count: int:
 	set(value): _motor.jump_count = value
 
 func _ready() -> void:
+	_health_items.configure(self)
 	_motor.configure(self)
-	_health.configure(max_hp)
+	_health.damage_cell_size = health_per_cell
+	_health.configure(clampi(starting_health_cells, 1, MAX_HEALTH_CELLS) * health_per_cell)
 	_health.changed.connect(_on_health_changed)
 	_health.depleted.connect(func(): _die_logic(0.0))
 	_receiver.configure(self, _health, $WeaponController.try_block)
@@ -152,13 +165,23 @@ func _ready() -> void:
 	_presentation.configure(self, $WeaponController, get_guard_component())
 	_hurt_presentation.configure(self, _receiver, animated_sprite)
 
+## Contact damage is actor-owned; physical contact cannot be blocked by a sword.
+func queue_contact_damage(amount: float, origin: Vector2) -> void:
+	if is_dead or not hitable or not is_finite(amount) or amount <= 0.0 or not origin.is_finite(): return
+	if _pending_contact != null: return
+	_pending_contact = Context.new(amount, origin, null, false)
+	get_hit = true
+
 # 修复后的受伤冷却，不会死循环
 func hit_cooldown(delta: float) -> void:
 	if get_hit and hitable:
 		if hit_invincibility_time > 0.0:
 			$Timer.start(hit_invincibility_time)
 			hitable = false
-		take_damage(10)
+		var contact = _pending_contact
+		_pending_contact = null
+		if contact != null: _receiver.receive_attack(contact)
+		else: take_damage(15)
 		get_hit = false
 	if hitcooltimer > 0.0:
 		hitcooltimer -= delta
@@ -177,8 +200,10 @@ func _die_logic(health: float) -> void:
 	if health <= 0.0: _lifecycle.die()
 
 func _on_death() -> void:
+	_health_items.cancel_use()
 	_motor.reset_state()
 	get_hit = false
+	_pending_contact = null
 	hitable = false
 	is_dashing = false
 	dash_timer = 0.0
@@ -203,8 +228,10 @@ func _on_respawn_requested(at_position: Vector2) -> void:
 	$Timer.stop()
 	global_position = at_position
 	velocity = Vector2.ZERO
-	real_hp = max_hp
+	# Respawn restores starting health; maximum capacity remains available for upgrades.
+	real_hp = minf(max_hp, clampi(starting_health_cells, 1, MAX_HEALTH_CELLS) * health_per_cell)
 	get_hit = false
+	_pending_contact = null
 	hitable = true
 	hitcooltimer = 0.0
 	damage_timer = 0.0
@@ -213,7 +240,9 @@ func _on_respawn_requested(at_position: Vector2) -> void:
 	current_winning_point = null
 	set_deferred("collision_layer", _alive_collision_layer)
 	set_deferred("collision_mask", _alive_collision_mask)
+	_hurt_presentation.reset_state()
 	animated_sprite.show()
+	animated_sprite.flip_h = false
 	animated_sprite.play("idle")
 	is_dead = false
 	$WeaponController.reset_after_respawn()
