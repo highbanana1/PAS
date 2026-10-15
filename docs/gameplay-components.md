@@ -150,3 +150,11 @@ CharacterMotor.grant_extra_air_jump() -> bool 是外部授予临时机会的接�
 素材使用优先级：优先复用 asset 文件夹内现有素材，再考虑新增。枪的子弹贴图使用 asset/pic/bullet_standred.png，Sprite2D 区域裁取有效像素并等比缩放为圆形，可见宽高现缩小为替换时的一半；子弹基础速度、伤害和碰撞配置保持原样。
 
 Bullet.gravity_strength 默认 35 px/s²，Inspector 可调，设为 0 恢复直线飞行。重力使用世界向下的恒加速度，每个新子弹独立累计下落速度；半秒下坠 4.375 像素，一秒下坠 17.5 像素。位移包含半加速度项以保持不同时间步长结果一致。
+
+## 霰弹枪
+
+当前 gun.gd 每次发射默认 5 颗弹丸，总扩散角默认 15°（左右最大各 7.5°）。每颗独立采样中心偏密的随机角度，不等距排列、不固定中心弹丸，不强制左右对称；每次射击生成新分布。Inspector 可调整 Pellet Count、Spread Degrees、Pellet Damage。默认每颗 2 点伤害，普通 5HP 小怪中两颗剩1HP，中三颗死亡；共享 bullet 场景默认伤害仍为1，不改变其他武器的弹丸。
+
+随机分布参考 Valve Source SDK 的随机散射思路，做2D角度适配：两个独立均匀随机数相加形成中心偏密分布，严格限制在总锥角内。参考 https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_fx_shared.cpp#L341-L349 。
+
+每把枪拥有独立 RandomNumberGenerator，仅初始化时随机化。generate_pellet_offsets() 返回本发的相对角度；set_spread_seed(seed) 可从下一次采样起复现分布，供后续权威射击命令接入；当前未实现真实网络同步。单颗配置保持直射，零扩散配置让所有弹丸对齐。先前半尺寸素材、重力35及碰撞逻辑保留。

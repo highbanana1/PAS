@@ -35,7 +35,7 @@ func run() -> void:
 	Input.action_press("block"); Input.action_press("fire")
 	w.get_node("LocalCombatInput").tick(1.0)
 	var bullets := get_nodes_in_group("bullet")
-	check(bullets.size() == 1 and bullets[0].shooter == p, "Gun still fires with right click held while sword guard is exhausted")
+	check(bullets.size() == 5 and bullets.all(func(shot): return shot.shooter == p), "Gun still fires with right click held while sword guard is exhausted")
 	check(not w.is_guarding and guard.exhausted and guard.value > 0, "Gun ignores guard requests and allows exhausted meter recovery")
 	check(p.get_node("gun").aim_direction.is_equal_approx(w.aim_direction), "Gun aim still follows the controller independently of guard lock")
 	Input.action_release("block"); Input.action_release("fire")

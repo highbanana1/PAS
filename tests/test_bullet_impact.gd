@@ -59,7 +59,7 @@ func _run() -> void:
 	player.get_node("WeaponController")._process(0.0)
 	Input.action_release("fire")
 	var fired = get_nodes_in_group("bullet")
-	check(fired.size() == 1 and fired[0].get("shooter") == player, "Gun records the firing player on its projectile")
+	check(fired.size() == 5 and fired.all(func(shot): return shot.shooter == player), "Gun records the firing player on its projectile")
 	for shot in fired:
 		shot.free()
 	bullet = make_bullet(player.position)

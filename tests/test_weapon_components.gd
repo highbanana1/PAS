@@ -25,7 +25,7 @@ func run() -> void:
 	check(controller.current_weapon == 9 and gun.active and not actor.get_node("Sword").active, "A separately mounted weapon registers without controller special casing")
 	check(controller.attack(Vector2.LEFT), "Remote actor can attack via an explicit command")
 	var shots = get_nodes_in_group("bullet")
-	check(shots.size() == 1 and shots[0].shooter == actor and shots[0].global_transform.x.x < 0, "Unified attack preserves projectile owner and requested direction")
+	check(shots.size() == 5 and shots.all(func(shot): return shot.shooter == actor and shot.global_transform.x.x < 0), "Unified attack preserves projectile owner and requested direction")
 	for shot in shots: shot.free()
 	Input.action_press("fire")
 	controller._process(0.0)
