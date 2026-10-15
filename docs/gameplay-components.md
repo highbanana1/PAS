@@ -147,4 +147,6 @@ CharacterMotor.grant_extra_air_jump() -> bool 是外部授予临时机会的接�
 
 开局默认选择第一个物品槽（3 号位），默认开启自动拾取。InventoryComponent.auto_pickup_enabled 保存本人设置；toggle_auto_pickup() 切换，tick_auto_pickup(delta) 每 0.15 秒检查并按最近顺序填满空槽，只在拾取距离内且存活时生效。本地输入按 T 切换，关闭后 F 仍可手动拾取；背包标题显示自动/手动状态。死亡不会改变自动拾取偏好，复活后可以重新自动拾取附近掉落物，但不会继续死亡前的物品使用。
 
-素材使用优先级：优先复用 asset 文件夹内现有素材，再考虑新增。枪的子弹贴图使用 asset/pic/bullet_standred.png，Sprite2D 区域裁取有效像素并等比缩放为圆形，保持原可见高度；子弹速度、伤害和碰撞配置保持原样。
+素材使用优先级：优先复用 asset 文件夹内现有素材，再考虑新增。枪的子弹贴图使用 asset/pic/bullet_standred.png，Sprite2D 区域裁取有效像素并等比缩放为圆形，可见宽高现缩小为替换时的一半；子弹基础速度、伤害和碰撞配置保持原样。
+
+Bullet.gravity_strength 默认 35 px/s²，Inspector 可调，设为 0 恢复直线飞行。重力使用世界向下的恒加速度，每个新子弹独立累计下落速度；半秒下坠 4.375 像素，一秒下坠 17.5 像素。位移包含半加速度项以保持不同时间步长结果一致。

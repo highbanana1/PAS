@@ -5,6 +5,9 @@ const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 const SPEED= 700
 var shooter: Node2D = null
 @export var damage: int = 1
+## Gentle world-down acceleration; zero restores straight flight.
+@export_range(0.0, 200.0, 1.0, "or_greater", "suffix:px/s²") var gravity_strength: float = 35.0
+var _fall_speed: float = 0.0
 
 # Called when the node enters the scene tree for the first time.
 func _ready() -> void:
@@ -13,7 +16,9 @@ func _ready() -> void:
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta: float) -> void:
-	position += transform.x * SPEED * delta
+	if not is_finite(delta) or delta <= 0.0: return
+	position += transform.x * SPEED * delta + Vector2.DOWN * (_fall_speed * delta + 0.5 * gravity_strength * delta * delta)
+	_fall_speed += gravity_strength * delta
 	
 
 
