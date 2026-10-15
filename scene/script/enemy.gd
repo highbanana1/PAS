@@ -4,10 +4,15 @@ const Health = preload("res://scene/script/components/health_component.gd")
 const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 const HurtPresentation = preload("res://scene/script/components/enemy_hurt_presentation.gd")
 var _hurt_presentation = HurtPresentation.new()
+const HealthItemDrops = preload("res://scene/script/components/health_item_drop_component.gd")
+var _health_item_drops = HealthItemDrops.new()
+@export_range(0.0, 1.0, 0.01) var health_item_drop_chance: float = 0.25
 var _health = Health.new()
 var _receiver = Receiver.new()
 
 func _init() -> void:
+	_health_item_drops.name = "HealthItemDrops"
+	add_child(_health_item_drops)
 	_hurt_presentation.name = "EnemyHurtPresentation"
 	add_child(_hurt_presentation)
 	_health.configure(5)
@@ -17,8 +22,9 @@ func _init() -> void:
 	add_child(_receiver)
 
 func _ready() -> void:
+	_health_item_drops.configure(self)
 	_receiver.configure(self, _health)
-	_health.depleted.connect(queue_free)
+	_health.depleted.connect(_drop_loot_and_die)
 	_hurt_presentation.configure(self, _receiver, animated_sprite)
 
 func get_hurt_presentation() -> Node:
@@ -32,6 +38,7 @@ func get_health_component() -> Node:
 
 
 @export var speed: float = 30.0
+@export var contact_damage: float = 15.0
 var direction: float = 1.0
 var health: int:
 	get: return int(_health.current)
@@ -86,5 +93,10 @@ func hurt(damage: int) -> void:
 	_health.apply_damage(damage)
 
 func _on_area_2d_body_entered(body: Node2D) -> void:
-	if body.is_in_group("player"):
-		body.get_hit = true
+	if body.is_in_group("player") and body.has_method("queue_contact_damage"):
+		body.queue_contact_damage(contact_damage, global_position)
+
+func _drop_loot_and_die() -> void:
+	_health_item_drops.drop_chance = health_item_drop_chance
+	_health_item_drops.drop_enemy_loot(global_position)
+	queue_free()

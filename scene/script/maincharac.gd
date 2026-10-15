@@ -15,10 +15,14 @@ const HurtPresentation = preload("res://scene/script/components/player_hurt_pres
 var _hurt_presentation = HurtPresentation.new()
 const HealthItems = preload("res://scene/script/components/health_item_component.gd")
 var _health_items = HealthItems.new()
+const HealthItemDrops = preload("res://scene/script/components/health_item_drop_component.gd")
+var _health_item_drops = HealthItemDrops.new()
 var _health = Health.new()
 var _receiver = Receiver.new()
 
 func _init() -> void:
+	_health_item_drops.name = "HealthItemDrops"
+	add_child(_health_item_drops)
 	_health_items.name = "HealthItems"
 	add_child(_health_items)
 	_hurt_presentation.name = "PlayerHurtPresentation"
@@ -56,6 +60,9 @@ func get_hurt_presentation() -> Node:
 
 func get_combat_receiver() -> Node:
 	return _receiver
+
+func get_health_item_drop_component() -> Node:
+	return _health_item_drops
 
 func get_health_item_component() -> Node:
 	return _health_items
@@ -145,6 +152,7 @@ var jump_count: int:
 
 func _ready() -> void:
 	_health_items.configure(self)
+	_health_item_drops.configure(self)
 	_motor.configure(self)
 	_health.damage_cell_size = health_per_cell
 	_health.configure(clampi(starting_health_cells, 1, MAX_HEALTH_CELLS) * health_per_cell)
@@ -200,7 +208,7 @@ func _die_logic(health: float) -> void:
 	if health <= 0.0: _lifecycle.die()
 
 func _on_death() -> void:
-	_health_items.cancel_use()
+	_health_item_drops.drop_inventory(_health_items.take_all_items(), global_position)
 	_motor.reset_state()
 	get_hit = false
 	_pending_contact = null
