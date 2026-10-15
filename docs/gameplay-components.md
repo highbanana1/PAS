@@ -129,7 +129,7 @@ LocalItemInput 单独处理本地 3/E/F。F 拾取距离内最近一件地面物
 
 独立场景 scene/health_item_pickup.tscn 可以直接拖入关卡，stored_hp 默认 30、pickup_distance 默认 40。HealthItemDropComponent.spawn_item/drop_enemy_loot/drop_inventory 分别供定点生成、概率战利品、背包掉落调用。Enemy.health_item_drop_chance 默认 0.25，在 Inspector 调整；每次死亡只判定一次。
 
-玩家 Inspector 的 health_item_use_duration 与 health_item_hold_threshold 分别控制使用时长和长按阈值。死亡会取消使用、在死亡位置掉落所有物品且保持各自剩余储量；复活物品栏为空，恢复五格血并保留已增加的最大容量。物品不会自动回到角色身上，也不会因复活补满。地面掉落不使用重力。真实网络权限与复制尚未实现，命令接口和每角色独立状态可用于后续接入。
+玩家 Inspector 的 health_item_use_duration 与 health_item_hold_threshold 分别控制使用时长和长按阈值。死亡会取消使用、在死亡位置掉落所有物品且保持各自剩余储量；复活物品栏为空，恢复五格血并保留已增加的最大容量。物品不会自动回到角色身上，也不会因复活补满。地面掉落使用 RigidBody2D 重力物理，只与环境第 1 层碰撞；碰撞层自身为 0，不阻挡角色、敌人、子弹或其他掉落物。真实网络权限与复制尚未实现，命令接口和每角色独立状态可用于后续接入。
 
 ## 通用顺位物品栏与一次性跳跃
 
@@ -142,3 +142,5 @@ ItemData 是独立物品契约：kind、capacity、remaining、holder、icon、i
 跳跃物品独立场景：scene/jump_item_pickup.tscn，可直接拖入关卡。ItemPickup 处理共用 F 拾取、图标与距离提示，按数据类型显示图片；原回血场景仍可用。敌人回血掉落概率保持原值，本轮未新增跳跃物品的随机掉落策略。死亡会掉落所有尚未使用的混合物品，保持各自数据，复活背包为空。
 
 CharacterMotor.grant_extra_air_jump() -> bool 是外部授予临时机会的接口。初始状态及落地恢复仍为一次普通跳跃，枪、剑、格挡、冲刺和世界运行保持原样。
+
+物品物理设置在 health_item_pickup.tscn 与 jump_item_pickup.tscn 根节点：Gravity Scale 调整重力强度，Collision Mask 默认仅环境第 1 层，Collision Layer 为 0。锁定旋转以保持图标和 F 提示朝向稳定；CollisionShape2D 使用 18×18 矩形。F 距离拾取与背包储量规则保持原样。

@@ -1,4 +1,4 @@
-extends Node2D
+extends RigidBody2D
 @export_enum("Health", "Jump") var item_type: int = 0
 @export_range(1.0, 1000.0, 1.0) var stored_hp: float = 30.0
 @export_range(1.0, 200.0, 1.0) var pickup_distance: float = 40.0
