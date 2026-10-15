@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scene/script/effects/muzzle_flash.gd" id="1"]
+
+[node name="MuzzleFlash" type="Node2D"]
+z_index = 5
+texture_filter = 1
+script = ExtResource("1")

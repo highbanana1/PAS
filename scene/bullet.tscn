@@ -3,6 +3,11 @@
 [ext_resource type="Texture2D" path="res://asset/pic/bullet_standred.png" id="1_qwydi"]
 [ext_resource type="Script" uid="uid://ddcoxem2yejkr" path="res://scene/script/bullet.gd" id="1_xw300"]
 
+[ext_resource type="Shader" path="res://asset/shaders/pellet_fire_rim.gdshader" id="3_rim"]
+
+[sub_resource type="ShaderMaterial" id="Material_rim"]
+shader = ExtResource("3_rim")
+
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_xw300"]
 radius = 6.0
 height = 52.0
@@ -11,6 +16,8 @@ height = 52.0
 script = ExtResource("1_xw300")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=828095650]
+material = SubResource("Material_rim")
+texture_filter = 1
 position = Vector2(-4.2351647e-22, -1.1920929e-07)
 scale = Vector2(0.004277778, 0.004277778)
 region_enabled = true

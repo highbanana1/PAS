@@ -158,3 +158,17 @@ Bullet.gravity_strength 默认 35 px/s²，Inspector 可调，设为 0 恢复直
 随机分布参考 Valve Source SDK 的随机散射思路，做2D角度适配：两个独立均匀随机数相加形成中心偏密分布，严格限制在总锥角内。参考 https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_fx_shared.cpp#L341-L349 。
 
 每把枪拥有独立 RandomNumberGenerator，仅初始化时随机化。generate_pellet_offsets() 返回本发的相对角度；set_spread_seed(seed) 可从下一次采样起复现分布，供后续权威射击命令接入；当前未实现真实网络同步。单颗配置保持直射，零扩散配置让所有弹丸对齐。先前半尺寸素材、重力35及碰撞逻辑保留。
+
+霰弹云新增 Pellet Speed Variation，默认 0.08，使每颗弹丸速度在基础速度的 92%–108% 内独立采样，形成前后错落的散射云；设为 0 可关闭速度变化，单颗配置保持原速。数量、15° 扩散、伤害、轻微重力与碰撞处理保留。
+
+弹丸光影使用 asset/shaders/pellet_fire_rim.gdshader，复用 asset/pic/bullet_standred.png。通过量化表面法线与三档明暗形成像素色块：朝枪口一侧有淡黄高亮，背光一侧为较暗的琥珀色，保留金属中心和细暗边以提高亮背景上的辨识度。Sprite2D 使用最近邻采样，原透明轮廓与尺寸不变。Shader Material 的 Shading Cells 调整色块密度，Warm Gold、Hot Highlight、Amber Shadow 调整配色。
+
+Bullet.set_fire_light_origin(origin) 接收开火时的世界枪口位置，飞行时转换为弹丸局部受光方向，枪口随后移动不会带走光源参考点。每颗弹丸复制独立 ShaderMaterial，多个角色或弹丸的高亮参数相互隔离。效果仅影响弹丸表面，不改变世界时间或伤害流程；真实联机仍需同步权威开火位置与随机种子。
+
+## 像素枪口火焰
+
+独立场景 scene/muzzle_flash.tscn，脚本 scene/script/effects/muzzle_flash.gd；由 Gun.play_fire_effect() 在成功开火后触发一次，也可由将来的远程射击事件单独调用。白黄火芯、黄色中层、橙色锯齿边缘由硬边像素块绘制，默认闪光 0.07 秒，7 颗火星在 0.26 秒内消散。现有 asset 中没有枪口火焰贴图，因此使用原生绘制，不引入外部贴图依赖。场景 Inspector 的 Flash Duration、Spark Count、Spark Lifetime、Pixel Size 可调节。
+
+效果在世界根节点生成，记录本发的枪口位置与方向；发射后角色移动或切换武器不会拖动火星。粒子使用独立的视觉随机数，不消耗弹丸散射随机序列。没有碰撞、伤害、输入或全局时间修改，结束自动清理。火星位置按像素取整，颜色和尺寸分档变化，保持像素风。
+
+视觉结构参考开源 Godot 射击反馈示例的枪口闪光思路 https://github.com/profesorshader/example-improved-shooting ，以及含霰弹枪示例的 https://github.com/Jeh3no/Godot-simple-FPS-weapon-system 。本项目效果为独立的二维像素实现，没有复制其代码或素材。

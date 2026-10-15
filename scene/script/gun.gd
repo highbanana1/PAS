@@ -1,9 +1,11 @@
 extends "res://scene/script/weapons/weapon_base.gd"
 const BULLET = preload("res://scene/bullet.tscn")
+const MUZZLE_FLASH = preload("res://scene/muzzle_flash.tscn")
 
 @export_range(1, 20) var pellet_count: int = 5
 @export_range(0.0, 90.0) var spread_degrees: float = 15.0
 @export_range(1, 100) var pellet_damage: int = 2
+@export_range(0.0, 0.25, 0.01) var pellet_speed_variation: float = 0.08
 
 var _spread_rng := RandomNumberGenerator.new()
 
@@ -47,7 +49,16 @@ func attack(direction: Vector2) -> bool:
 		var bullet = BULLET.instantiate()
 		bullet.shooter = actor
 		bullet.damage = pellet_damage
+		var variation := clampf(pellet_speed_variation,0.0,0.25) if is_finite(pellet_speed_variation) else 0.08
+		bullet.speed_multiplier = 1.0 + _spread_rng.randf_range(-variation,variation) if pellet_count > 1 else 1.0
 		bullet.global_position = muzzle.global_position
 		bullet.rotation = global_rotation + offset
+		bullet.set_fire_light_origin(muzzle.global_position)
 		get_tree().root.add_child(bullet)
+	play_fire_effect()
 	return true
+
+func play_fire_effect() -> void:
+	var effect = MUZZLE_FLASH.instantiate()
+	get_tree().root.add_child(effect)
+	effect.play_at(muzzle.global_position, Vector2.RIGHT.rotated(global_rotation))
