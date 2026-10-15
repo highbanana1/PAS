@@ -125,8 +125,20 @@ HealthItemData 保存单件 capacity/remaining，HealthItemComponent 持有每�
 
 默认一件存储 30 HP。短按 3 只选择，长按超过 0.3 秒开始持续治疗，2 秒消耗一件完整储量；仅实际恢复的 HP 扣除储量，满血不浪费。选中后按 E，仅全满储量可增加一格最大血量和当前血量并消耗，最多八格；部分物品可继续治疗，但不能扩容。选武器 1/2/滚轮取消物品选择与持续使用，枪剑攻击机制保持原样。
 
-LocalItemInput 单独处理本地 3/E/F。F 拾取距离内最近一件地面物品；同件物品只成功转移一次。底栏第一个物品槽显示提供的图片、剩余储量和数量；其余槽保持空白，不显示星星。
+LocalItemInput 单独处理本地 3/E/F。F 拾取距离内最近一件地面物品；同件物品只成功转移一次。底栏三个槽位按拾取顺序显示各件物品图片；支持持续使用的物品显示剩余储量，不显示星星。
 
 独立场景 scene/health_item_pickup.tscn 可以直接拖入关卡，stored_hp 默认 30、pickup_distance 默认 40。HealthItemDropComponent.spawn_item/drop_enemy_loot/drop_inventory 分别供定点生成、概率战利品、背包掉落调用。Enemy.health_item_drop_chance 默认 0.25，在 Inspector 调整；每次死亡只判定一次。
 
 玩家 Inspector 的 health_item_use_duration 与 health_item_hold_threshold 分别控制使用时长和长按阈值。死亡会取消使用、在死亡位置掉落所有物品且保持各自剩余储量；复活物品栏为空，恢复五格血并保留已增加的最大容量。物品不会自动回到角色身上，也不会因复活补满。地面掉落不使用重力。真实网络权限与复制尚未实现，命令接口和每角色独立状态可用于后续接入。
+
+## 通用顺位物品栏与一次性跳跃
+
+当前统一入口是 Player.get_inventory_component()。旧 get_health_item_component() 和 health_item_component.gd 保留为兼容入口，返回同一份通用物品栏状态，没有第二份背包。
+
+InventoryComponent 提供三个通用槽，按拾取先后排列；3、4、5 对应槽位下标 0、1、2，E 调用当前物品 use_once。消耗后后面的物品前移，背包满时拒绝拾取且地面物品保留。长按槽位键仅对 supports_continuous_use 的物品生效；持续输入绑定原物品实例，物品消耗或切换后立即停止，避免误用前移后的物品。
+
+ItemData 是独立物品契约：kind、capacity、remaining、holder、icon、icon_region，以及 use_once(actor)、supports_continuous_use()、heal_continuously(actor, amount)。HealthItemData 保留 E 全储量扩容和长按实际治疗量扣储量；JumpItemData 使用 asset/pic/jumpitem.png，E 消耗一件并授予一次额外空中跳跃机会，不自动起跳。已有机会时拒绝再次使用且不消耗物品；机会只在普通跳跃耗尽后的下一次空中跳跃消耗，不永久增加跳跃次数，死亡/移动重置清除。
+
+跳跃物品独立场景：scene/jump_item_pickup.tscn，可直接拖入关卡。ItemPickup 处理共用 F 拾取、图标与距离提示，按数据类型显示图片；原回血场景仍可用。敌人回血掉落概率保持原值，本轮未新增跳跃物品的随机掉落策略。死亡会掉落所有尚未使用的混合物品，保持各自数据，复活背包为空。
+
+CharacterMotor.grant_extra_air_jump() -> bool 是外部授予临时机会的接口。初始状态及落地恢复仍为一次普通跳跃，枪、剑、格挡、冲刺和世界运行保持原样。

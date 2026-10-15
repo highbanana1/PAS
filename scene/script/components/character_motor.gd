@@ -10,12 +10,18 @@ var is_dashing: bool = false
 var dash_dir: Vector2 = Vector2.RIGHT
 var dash_timer: float = 0.0
 var jump_count: int = 1
+var extra_air_jumps: int = 0
 var _jump_requested: bool = false
 var _dash_requested: bool = false
 var _requested_direction: Vector2
 
 func configure(owner_body: CharacterBody2D) -> void:
 	body = owner_body
+
+func grant_extra_air_jump() -> bool:
+	if not is_instance_valid(body) or body.get("is_dead") == true or extra_air_jumps > 0: return false
+	extra_air_jumps = 1
+	return true
 
 func request_jump() -> void:
 	_jump_requested = true
@@ -34,9 +40,13 @@ func tick(delta: float, move_input: Vector2) -> void:
 	if body.is_on_floor():
 		if jump_count == 0: jump_count = 1
 		if not is_dashing and not can_dash: can_dash = true
-	if _jump_requested and jump_count != 0:
-		body.velocity.y = jump_velocity
-		jump_count -= 1
+	if _jump_requested:
+		if jump_count > 0:
+			body.velocity.y = jump_velocity
+			jump_count -= 1
+		elif not body.is_on_floor() and extra_air_jumps > 0:
+			body.velocity.y = jump_velocity
+			extra_air_jumps -= 1
 	_jump_requested = false
 	if not is_dashing:
 		body.velocity.x = move_input.x * speed if move_input.x else move_toward(body.velocity.x, 0.0, speed)
@@ -57,6 +67,7 @@ func tick(delta: float, move_input: Vector2) -> void:
 		if dash_timer <= 0.0: is_dashing = false
 
 func reset_state() -> void:
+	extra_air_jumps = 0
 	can_dash = true
 	is_dashing = false
 	dash_dir = Vector2.RIGHT

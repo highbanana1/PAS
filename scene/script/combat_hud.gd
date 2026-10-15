@@ -3,6 +3,9 @@ extends CanvasLayer
 @export var idle_style: StyleBoxFlat
 var _actor: Node2D
 var _items: Node
+var _icons: Array = []
+var _reserves: Array = []
+var _counts: Array = []
 var _controller: Node
 @onready var guard_bar: ProgressBar = %GuardBar
 @onready var gun_slot: PanelContainer = %GunSlot
@@ -10,6 +13,7 @@ var _controller: Node
 @onready var _bottom_bar: HBoxContainer = %BottomBar
 
 func _ready() -> void:
+	_setup_item_slots()
 	get_viewport().size_changed.connect(_resize_hotbar)
 	_resize_hotbar()
 
@@ -61,13 +65,33 @@ func _update_guard(value: float, maximum: float) -> void:
 	guard_bar.max_value = maximum
 	guard_bar.value = value
 
+func _setup_item_slots() -> void:
+	_icons = [%HealthItemIcon]; _reserves = [%HealthItemProgress]; _counts = [%HealthItemCount]
+	for index in range(1,3):
+		var slot: PanelContainer = %ItemSlot2 if index == 1 else %ItemSlot3
+		var box := VBoxContainer.new(); box.add_theme_constant_override("separation",1); slot.add_child(box); box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var icon := TextureRect.new(); icon.custom_minimum_size = Vector2(30,20)
+		icon.size_flags_vertical = Control.SIZE_EXPAND_FILL; icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(icon); _icons.append(icon)
+		var reserve := ProgressBar.new(); reserve.custom_minimum_size = Vector2(0,4)
+		reserve.mouse_filter = Control.MOUSE_FILTER_IGNORE; reserve.show_percentage = false; reserve.step = 0.01
+		for style in ["background","fill"]: reserve.add_theme_stylebox_override(style,%HealthItemProgress.get_theme_stylebox(style))
+		box.add_child(reserve); _reserves.append(reserve)
+		var footer := HBoxContainer.new(); footer.mouse_filter = Control.MOUSE_FILTER_IGNORE; box.add_child(footer)
+		var key := Label.new(); key.text = str(index + 3); key.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		key.mouse_filter = Control.MOUSE_FILTER_IGNORE; key.add_theme_font_override("font",%HealthItemCount.get_theme_font("font")); key.add_theme_font_size_override("font_size",12); footer.add_child(key)
+		var count := Label.new(); count.mouse_filter = Control.MOUSE_FILTER_IGNORE; count.add_theme_font_override("font",%HealthItemCount.get_theme_font("font")); count.add_theme_font_size_override("font_size",12); footer.add_child(count); _counts.append(count)
+
 func _update_items() -> void:
-	var has_item: bool = is_instance_valid(_items) and not _items.items.is_empty()
-	var is_selected: bool = is_instance_valid(_items) and _items.selected
-	%ItemSlot1.add_theme_stylebox_override("panel", selected_style if is_selected else idle_style)
-	%HealthItemIcon.visible = has_item
-	%HealthItemProgress.visible = has_item
-	%HealthItemCount.text = str(_items.items.size()) if has_item else ""
-	if has_item:
-		%HealthItemProgress.max_value = _items.items[0].capacity
-		%HealthItemProgress.value = _items.items[0].remaining
+	for index in range(3):
+		var slot: Control = [%ItemSlot1,%ItemSlot2,%ItemSlot3][index]
+		var has_item: bool = is_instance_valid(_items) and index < _items.items.size()
+		var is_selected: bool = is_instance_valid(_items) and _items.selected and _items.selected_index == index
+		slot.add_theme_stylebox_override("panel",selected_style if is_selected else idle_style)
+		_icons[index].visible = has_item; _reserves[index].visible = false; _counts[index].text = "1" if has_item else ""
+		if has_item:
+			var item = _items.items[index]; var atlas := AtlasTexture.new()
+			atlas.atlas = item.icon; atlas.region = item.icon_region; _icons[index].texture = atlas
+			_reserves[index].visible = item.supports_continuous_use()
+			_reserves[index].max_value = item.capacity; _reserves[index].value = item.remaining

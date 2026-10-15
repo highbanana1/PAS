@@ -1,15 +1,13 @@
-extends RefCounted
-## One inventory entry owns one reserve; separate entries never merge charge.
-var capacity: float
-var remaining: float
-var holder: WeakRef
+extends "res://scene/script/items/item_data.gd"
 func _init(amount: float = 30.0) -> void:
+	kind = &"health"
 	capacity = amount if is_finite(amount) and amount > 0.0 else 30.0
 	remaining = capacity
-func is_full() -> bool:
-	return is_equal_approx(remaining, capacity)
-func consume(amount: float) -> float:
-	if not is_finite(amount) or amount <= 0.0: return 0.0
-	var used := minf(amount, remaining)
-	remaining = maxf(remaining - used, 0.0)
-	return used
+	icon = preload("res://asset/pic/healthitem.png"); icon_region = Rect2(576,576,960,832)
+func supports_continuous_use() -> bool: return true
+func use_once(actor: Node2D) -> bool:
+	var cell: float = actor.health_per_cell
+	if not is_full() or actor.max_hp + cell > cell * actor.MAX_HEALTH_CELLS: return false
+	actor.max_hp += cell; actor.real_hp += cell; consume(remaining); return true
+func heal_continuously(actor: Node2D, amount: float) -> float:
+	return actor.get_health_component().heal(amount)

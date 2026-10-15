@@ -1,0 +1,55 @@
+extends SceneTree
+var failures: Array[String] = []
+func _initialize() -> void: run.call_deferred()
+func check(ok: bool, label: String) -> void:
+	print(("PASS: " if ok else "FAIL: ") + label)
+	if not ok: failures.append(label)
+func action(name: String) -> InputEventAction:
+	var e := InputEventAction.new(); e.action = name; e.pressed = true; return e
+func run() -> void:
+	var game = load("res://scene/main.tscn").instantiate(); root.add_child(game); current_scene = game
+	var p = game.get_node("CharacterBody2D"); p.set_physics_process(false)
+	game.get_node("enemy").set_physics_process(false); p.get_weapon_controller().set_process(false)
+	check(p.has_method("get_inventory_component"), "Actor exposes generic ordered inventory")
+	if not p.has_method("get_inventory_component"): game.free(); quit(1); return
+	var c = p.get_inventory_component(); var motor = p.get_motor()
+	var Health = load("res://scene/script/items/health_item_data.gd")
+	var Jump = load("res://scene/script/items/jump_item_data.gd")
+	c.add_item(Health.new(30))
+	var pickup = load("res://scene/jump_item_pickup.tscn").instantiate(); game.add_child(pickup)
+	pickup.global_position = p.global_position + Vector2(100,0)
+	check(not pickup.try_pick_up(p), "Jump item requires nearby pickup")
+	pickup.global_position = p.global_position
+	var input = p.get_node("LocalItemInput"); input.set_process(false)
+	input.handle_event(action("item_pickup"))
+	check(c.items.size() == 2 and c.items[0].kind == &"health" and c.items[1].kind == &"jump" and not pickup.try_pick_up(p), "Items occupy slots in pickup order without duplication")
+	input.handle_event(action("item_select_2"))
+	check(c.selected_index == 1, "4 selects the second slot rather than a fixed type")
+	var before: Vector2 = p.velocity; input.handle_event(action("item_use"))
+	check(c.items.size() == 1 and motor.extra_air_jumps == 1 and p.velocity == before, "E consumes jump item and grants one air jump without auto-jumping")
+	c.add_item(Jump.new()); c.select_item(1)
+	check(not c.use_selected() and c.items.size() == 2, "Active bonus cannot stack or waste another item")
+	motor.jump_count = 0; p.velocity = Vector2(0,50); motor.request_jump(); motor.tick(0,Vector2.ZERO)
+	check(p.velocity.y == -400 and motor.extra_air_jumps == 0, "Next airborne jump consumes the one-time bonus")
+	p.velocity.y = 50; motor.request_jump(); motor.tick(0,Vector2.ZERO)
+	check(p.velocity.y == 50, "Further airborne jump is rejected")
+	c.use_selected(); motor.reset_state()
+	check(motor.extra_air_jumps == 0 and motor.jump_count == 1, "Reset clears temporary bonus rather than granting permanent double jump")
+	c.take_all_items(); c.add_item(Jump.new()); c.add_item(Health.new(30)); c.add_item(Jump.new())
+	check(not c.add_item(Health.new(30)) and c.items.size() == 3, "Three-slot inventory rejects overflow without replacing items")
+	input.handle_event(action("item_select_3"))
+	check(c.selected_index == 2, "5 selects the third generic slot")
+	c.select_item(0); c.use_selected()
+	check(c.items.size() == 2 and c.items[0].kind == &"health" and c.items[1].kind == &"jump", "Later items shift forward after consumption")
+	motor.reset_state(); c.take_all_items(); c.add_item(Health.new(30)); c.add_item(Jump.new()); p.real_hp = 120
+	input.handle_event(action("item_select_2")); input.handle_event(action("item_use")); input.tick(1)
+	check(p.real_hp == 120 and c.items[0].remaining == 30, "Holding 4 after consuming jump never starts healing from slot 3")
+	c.take_all_items(); var small = Health.new(30); small.remaining = 5; c.add_item(small); c.add_item(Health.new(30))
+	input.handle_event(action("item_select_1")); input.tick(1.3); input.tick(1)
+	check(p.real_hp == 125 and c.items.size() == 1 and c.items[0].remaining == 30, "Held healing stops when its original item is exhausted")
+	c.take_all_items(); c.add_item(Health.new(30)); c.add_item(Jump.new())
+	p.real_hp = 10; p.take_damage(100)
+	check(c.items.is_empty() and get_nodes_in_group("jump_item_pickup").size() == 1 and get_nodes_in_group("health_item_pickup").size() == 1, "Death drops mixed items and empties inventory")
+	p.respawn(p.spawn_position)
+	check(motor.extra_air_jumps == 0 and c.items.is_empty(), "Respawn never restores spent or dropped items")
+	game.free(); print("RESULT: ", failures.size(), " failures"); quit(0 if failures.is_empty() else 1)

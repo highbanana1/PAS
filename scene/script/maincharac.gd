@@ -74,6 +74,9 @@ func get_combat_receiver() -> Node:
 func get_health_item_drop_component() -> Node:
 	return _health_item_drops
 
+func get_inventory_component() -> Node:
+	return _health_items
+
 func get_health_item_component() -> Node:
 	return _health_items
 

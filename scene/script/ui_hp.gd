@@ -20,6 +20,8 @@ func _ready() -> void:
 	for index in range(_cells.size()):
 		_cells[index].position = Vector2(26 + 18 * index, 9)
 		_cells[index].size = Vector2(16, 16)
+		# Empty health reveals the world; keep only the border and remaining fill.
+		_cells[index].texture_under = null
 		_cells[index].mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bind_actor(player)
 

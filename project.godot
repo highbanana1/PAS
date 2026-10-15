@@ -27,6 +27,15 @@ enabled=PackedStringArray("res://addons/agent/plugin.cfg", "res://addons/godot_m
 
 [input]
 
+item_select_2={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":52)]
+}
+item_select_3={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":53)]
+}
+
 item_select_1={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"physical_keycode":51)]
