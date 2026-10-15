@@ -167,7 +167,7 @@ Bullet.set_fire_light_origin(origin) 接收开火时的世界枪口位置，飞�
 
 ## 像素枪口火焰
 
-独立场景 scene/muzzle_flash.tscn，脚本 scene/script/effects/muzzle_flash.gd；由 Gun.play_fire_effect() 在成功开火后触发一次，也可由将来的远程射击事件单独调用。白黄火芯、黄色中层、橙色锯齿边缘由硬边像素块绘制，默认闪光 0.07 秒，7 颗火星在 0.26 秒内消散。现有 asset 中没有枪口火焰贴图，因此使用原生绘制，不引入外部贴图依赖。场景 Inspector 的 Flash Duration、Spark Count、Spark Lifetime、Pixel Size 可调节。
+独立场景 scene/muzzle_flash.tscn，脚本 scene/script/effects/muzzle_flash.gd；由 Gun.play_fire_effect() 在成功开火后触发一次，也可由将来的远程射击事件单独调用。白黄火芯、黄色中层、橙色锯齿边缘由硬边像素块绘制，默认闪光 0.07 秒，7 颗火星在 0.26 秒内消散。现有 asset 中没有枪口火焰贴图，因此使用原生绘制，不引入外部贴图依赖。场景 Inspector 的 Flash Duration、Spark Count、Spark Lifetime、Pixel Size 可调节。默认 Pixel Size 为 1，火焰峰值为 5×3 世界像素，仅稍大于枪口；火星为单像素，起点收紧到枪口前方。
 
 效果在世界根节点生成，记录本发的枪口位置与方向；发射后角色移动或切换武器不会拖动火星。粒子使用独立的视觉随机数，不消耗弹丸散射随机序列。没有碰撞、伤害、输入或全局时间修改，结束自动清理。火星位置按像素取整，颜色和尺寸分档变化，保持像素风。
 

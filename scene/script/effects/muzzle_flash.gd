@@ -3,7 +3,7 @@ extends Node2D
 @export_range(0.02, 0.15, 0.005) var flash_duration: float = 0.07
 @export_range(0, 20) var spark_count: int = 7
 @export_range(0.1, 0.5, 0.01) var spark_lifetime: float = 0.26
-@export_range(1.0, 4.0, 0.5) var pixel_size: float = 2.0
+@export_range(1.0, 4.0, 0.5) var pixel_size: float = 1.0
 var _age: float = 0.0
 var _sparks: Array[Dictionary] = []
 var _rng := RandomNumberGenerator.new()
@@ -15,7 +15,7 @@ func _ready() -> void:
 	_shape_variant = _rng.randi_range(0, 2)
 	for i in range(spark_count):
 		var velocity := Vector2.RIGHT.rotated(deg_to_rad(_rng.randf_range(-35.0, 35.0))) * _rng.randf_range(65.0, 155.0)
-		_sparks.append({"origin": Vector2(_rng.randf_range(3.0, 9.0), _rng.randf_range(-2.0, 2.0)), "velocity": velocity, "life": _rng.randf_range(spark_lifetime * 0.6, spark_lifetime), "size": _rng.randi_range(1, 2)})
+		_sparks.append({"origin": Vector2(_rng.randf_range(1.0, 3.0), _rng.randf_range(-0.5, 0.5)), "velocity": velocity, "life": _rng.randf_range(spark_lifetime * 0.6, spark_lifetime), "size": 1})
 	queue_redraw()
 
 func play_at(origin: Vector2, direction: Vector2) -> void:
@@ -47,14 +47,14 @@ func _draw() -> void:
 
 func _draw_flame() -> void:
 	var phase := _age / maxf(0.001, flash_duration)
-	var widths := [1, 2, 3, 3, 2, 3, 2, 1, 2, 1, 0]
-	var columns := 11 if phase < 0.45 else (8 if phase < 0.75 else 5)
+	var widths := [0, 1, 1, 0, 0]
+	var columns := 5 if phase < 0.45 else (3 if phase < 0.75 else 2)
 	for x in range(columns):
 		var half_width: int = widths[x]
-		if _shape_variant == 1 and x == 6: half_width += 1
-		if _shape_variant == 2 and x == 3: half_width -= 1
+		if _shape_variant == 1 and x == 3: half_width = 1
+		if _shape_variant == 2 and x == 2: half_width = 0
 		for y in range(-half_width, half_width + 1):
 			var color := Color(1.0, 0.38, 0.04)
 			if abs(y) < half_width and x < columns - 2: color = Color(1.0, 0.76, 0.16)
-			if abs(y) <= 1 and x < 5 and phase < 0.75: color = Color(1.0, 0.97, 0.74)
+			if y == 0 and x < 2 and phase < 0.75: color = Color(1.0, 0.97, 0.74)
 			draw_rect(Rect2(Vector2(x, y) * pixel_size, Vector2.ONE * pixel_size), color)
