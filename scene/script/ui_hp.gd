@@ -7,11 +7,24 @@ extends CanvasLayer
 var _health: Node
 var _actor: Node2D
 
+const MAX_CELLS: int = 8
+var _cells: Array[TextureProgressBar] = []
+
 func _ready() -> void:
-	bar1.max_value = single_bar_hp
-	bar2.max_value = single_bar_hp
-	bar3.max_value = single_bar_hp
+	_cells.assign([bar1, bar2, bar3])
+	while _cells.size() < MAX_CELLS:
+		var cell := bar1.duplicate() as TextureProgressBar
+		cell.name = "TextureProgressBar%d" % (_cells.size() + 1)
+		bar1.get_parent().add_child(cell)
+		_cells.append(cell)
+	for index in range(_cells.size()):
+		_cells[index].position = Vector2(26 + 18 * index, 9)
+		_cells[index].size = Vector2(16, 16)
+		_cells[index].mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bind_actor(player)
+
+func get_health_cells() -> Array[TextureProgressBar]:
+	return _cells.duplicate()
 
 func bind_actor(actor: Node2D) -> void:
 	unbind_actor()
@@ -35,8 +48,13 @@ func _on_health_changed(_current: float, _maximum: float) -> void:
 	update_three_bars()
 
 func update_three_bars() -> void:
+	update_health_cells()
+
+func update_health_cells() -> void:
 	if not is_instance_valid(_health): return
-	var value: float = clampf(_health.current, 0.0, single_bar_hp * 3.0)
-	bar1.value = clampf(value, 0.0, single_bar_hp)
-	bar2.value = clampf(value - single_bar_hp, 0.0, single_bar_hp)
-	bar3.value = clampf(value - single_bar_hp * 2.0, 0.0, single_bar_hp)
+	var cell_hp: float = _health.damage_cell_size if _health.damage_cell_size > 0.0 else single_bar_hp
+	for index in range(_cells.size()):
+		var cell := _cells[index]
+		cell.max_value = cell_hp
+		cell.value = clampf(_health.current - index * cell_hp, 0.0, cell_hp)
+		cell.visible = cell.value > 0.0 and index < ceili(_health.maximum / cell_hp)

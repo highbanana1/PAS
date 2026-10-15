@@ -44,7 +44,7 @@ func run() -> void:
 	check(enemy.has_method("get_combat_receiver"), "Enemy shares the same combat entry point")
 	check(Receiver.deliver(enemy, Context.new(1, Vector2.ZERO)) == Context.Result.DAMAGED and enemy.health == 4 and not enemy.get_hited, "Enemy takes damage without a pre-set hit flag")
 	actor.take_damage(10)
-	check(actor.real_hp == 80 and actor.get_combat_receiver().health.current == 80, "Legacy player damage proxies the single health source")
+	check(actor.real_hp == 140 and actor.get_combat_receiver().health.current == 140, "Legacy player damage proxies the single health source")
 	receiver.free(); a.free(); b.free(); enemy.free(); actor.free()
 	print("RESULT: ", failures.size(), " failures")
 	quit(0 if failures.is_empty() else 1)

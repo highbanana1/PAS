@@ -41,7 +41,7 @@ func _run() -> void:
 	# Exercise the original damage/death entry point rather than a test-only path.
 	star._on_player_touch(player)
 	player.global_position = Vector2(80, -80)
-	player.take_damage(90)
+	kill_actor(player)
 	check(player.get("is_dead") == true, "Lethal damage enters an explicit dead state")
 	await settle()
 	check(is_instance_valid(player), "Player node survives death for independent respawn")
@@ -84,10 +84,10 @@ func _run() -> void:
 	if screen != null:
 		var shown: int = int(screen.get_node("%Countdown").text)
 		check(shown > 0 and shown < 5, "Visible countdown decreases in real game time")
-	player.take_damage(90)
+	kill_actor(player)
 	player._die_logic(0)
 	await create_timer(4.05).timeout
-	check(not player.is_dead and player.real_hp == 90, "Countdown automatically revives at full health despite duplicate death calls")
+	check(not player.is_dead and player.real_hp == 150, "Countdown automatically revives at full health despite duplicate death calls")
 	check(player.get_instance_id() == original_player_id, "Respawn preserves player identity")
 	check(enemy.get_instance_id() == original_enemy_id and enemy.health == 3, "Respawn preserves shared enemy state")
 	check(player.collision_layer == spawn_layer and player.collision_mask == spawn_mask, "Respawn restores original collision filters")
@@ -101,10 +101,10 @@ func _run() -> void:
 	table._on_body_entered(player)
 	check(table.wp == star and star.ref == table, "Existing star delivery still works")
 	player.respawn_delay = 0.15
-	player.take_damage(90)
+	kill_actor(player)
 	player._die_logic(0)
 	await create_timer(0.3).timeout
-	check(not player.is_dead and player.real_hp == 90, "A second death gets its own successful respawn")
+	check(not player.is_dead and player.real_hp == 150, "A second death gets its own successful respawn")
 	check(table.wp == star and star.ref == table, "Delivered objective survives death and respawn")
 	# A second player's lifecycle must not drive the local player's overlay.
 	var remote = load("res://scene/maincharac.tscn").instantiate()
@@ -112,13 +112,19 @@ func _run() -> void:
 	remote.position = Vector2(900, -200)
 	game.add_child(remote)
 	remote.respawn_delay = 0.15
-	remote.take_damage(90)
+	kill_actor(remote)
 	check(remote.get("is_dead") == true, "Non-local player's damage API enters death without local input processing")
 	check(not player.is_dead and not paused, "Other player's death does not affect local player or world")
 	if screen != null:
 		check(not screen.visible, "Other player's death does not show local death UI")
 	await create_timer(0.3).timeout
-	check(not remote.is_dead and remote.real_hp == 90 and not remote.get_node("gun").is_processing(), "Other player independently respawns without receiving local weapon input")
+	check(not remote.is_dead and remote.real_hp == 150 and not remote.get_node("gun").is_processing(), "Other player independently respawns without receiving local weapon input")
 	game.free()
 	print("RESULT: ", failures.size(), " failures")
 	quit(0 if failures.is_empty() else 1)
+
+# Death fixtures now deplete one cell per hit, including duplicate-death coverage.
+func kill_actor(actor: Node) -> void:
+	for index in range(9):
+		actor.take_damage(actor.max_hp)
+		if actor.is_dead: return

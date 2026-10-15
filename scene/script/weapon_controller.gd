@@ -85,7 +85,8 @@ func aim(direction: Vector2) -> void:
 
 func attack(direction: Vector2) -> bool:
 	var weapon := _current()
-	if not is_instance_valid(actor) or actor.get("is_dead") == true or is_guarding or not is_instance_valid(weapon): return false
+	if not is_instance_valid(actor) or actor.get("is_dead") == true or not is_instance_valid(weapon): return false
+	set_guarding(false)
 	aim(direction)
 	return weapon.attack(aim_direction)
 

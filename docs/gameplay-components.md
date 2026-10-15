@@ -1,6 +1,6 @@
 # PAS 游戏组件使用说明
 
-稳定基线：`develop / 8b81567`。重构保持原有数值、输入和表现；尚未实现实际网络同步与权限判定。
+稳定基线：`develop / 8b81567`。组件重构后的玩法调整见下文；尚未实现实际网络同步与权限判定。
 
 ## 状态在哪里
 
@@ -103,3 +103,30 @@ CombatPresentation 只订阅格挡组件的 blocked。玩家和敌人各自有�
 
 运行 `tests/test_*.gd` 下全部 SceneTree 测试；补充测试覆盖独立生命、复活、携带、真实移动、武器挂载、外部命令及 UI 重新绑定。
 编辑器完整导入用于解析全部脚本；实际渲染检查像素界面、刀光、闪光、格挡火花和死亡/复活表现。
+
+## 玩家分格血量
+
+玩家 Inspector 的 starting_health_cells 默认 5，最多 8；health_per_cell 默认 30，因此开局 150 血，上限 240 血。运行时 max_hp 兼容接口会限制在八格容量内，复活恢复开局的五格血量；已获得的最大血量容量保留。
+
+HealthComponent.damage_cell_size 大于零时，每次 apply_damage 最多扣完当前格，溢出直接丢弃。例如剩 125 血受到 15 点伤害后剩 120 血；下一格仍为 30 血。默认值 0 保留普通伤害结算，敌人不启用分格规则。
+
+UI 保留原 bar1/bar2/bar3 接口，get_health_cells 返回八个独立格子的引用。耗尽的整格连同边框一起隐藏，治疗后可以重新显示。
+
+小怪 contact_damage 默认 15，可在 Inspector 修改。身体接触调用玩家 queue_contact_damage(amount, origin)，沿用角色自己的受击无敌计时，并禁止剑格挡碰撞伤害。
+
+格挡耗尽后 GuardComponent.exhausted 锁定再次格挡，恢复到满条后才解除；耗尽恢复期间右键请求无效，持续按住也不会扣条或暂停恢复；时间消耗和挡住攻击扣空都采用此规则。reset_state 会补满并清除锁定。复活同时清理格挡请求、攻击冷却、受击动画与受击计时，恢复跳跃、冲刺和零速度；各角色单独重置，不影响世界或其他角色。
+
+
+攻击指令优先于格挡：WeaponController.attack 会先解除格挡，LocalCombatInput 在左键按下当帧优先发出攻击指令。挥剑期间不可重新格挡；动作结束后若仍请求防守且蓝条未锁定，则恢复格挡。蓝条耗尽锁定仅限制防守，不限制攻击。
+
+## 回血物品
+
+HealthItemData 保存单件 capacity/remaining，HealthItemComponent 持有每名角色独立的 items 列表。玩家 get_health_item_component() 返回组件；add_item、select_item、use_selected、begin_continuous_use、tick_continuous_use、cancel_use、try_pick_up、pick_up_nearest、take_all_items 是统一命令入口，组件不读取本地 Input。
+
+默认一件存储 30 HP。短按 3 只选择，长按超过 0.3 秒开始持续治疗，2 秒消耗一件完整储量；仅实际恢复的 HP 扣除储量，满血不浪费。选中后按 E，仅全满储量可增加一格最大血量和当前血量并消耗，最多八格；部分物品可继续治疗，但不能扩容。选武器 1/2/滚轮取消物品选择与持续使用，枪剑攻击机制保持原样。
+
+LocalItemInput 单独处理本地 3/E/F。F 拾取距离内最近一件地面物品；同件物品只成功转移一次。底栏第一个物品槽显示提供的图片、剩余储量和数量；其余槽保持空白，不显示星星。
+
+独立场景 scene/health_item_pickup.tscn 可以直接拖入关卡，stored_hp 默认 30、pickup_distance 默认 40。HealthItemDropComponent.spawn_item/drop_enemy_loot/drop_inventory 分别供定点生成、概率战利品、背包掉落调用。Enemy.health_item_drop_chance 默认 0.25，在 Inspector 调整；每次死亡只判定一次。
+
+玩家 Inspector 的 health_item_use_duration 与 health_item_hold_threshold 分别控制使用时长和长按阈值。死亡会取消使用、在死亡位置掉落所有物品且保持各自剩余储量；复活物品栏为空，恢复五格血并保留已增加的最大容量。物品不会自动回到角色身上，也不会因复活补满。地面掉落不使用重力。真实网络权限与复制尚未实现，命令接口和每角色独立状态可用于后续接入。

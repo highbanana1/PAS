@@ -17,7 +17,7 @@ func run() -> void:
 	var b = load("res://scene/maincharac.tscn").instantiate()
 	b.position = Vector2(2000,-300); game.add_child(b)
 	b.set_physics_process(false); b.get_weapon_controller().set_process(false)
-	b.take_damage(40); b.get_weapon_controller().guard_value = 30
+	b.real_hp = 50; b.get_weapon_controller().guard_value = 30
 	hud.bind_actor(a); hud.bind_actor(b); hud.bind_actor(b)
 	check(hud.get_node("%GuardBar").value == 30, "Repeated rebinding initializes the new actor immediately")
 	a.get_weapon_controller().guard_changed.emit(10,100)
@@ -31,7 +31,7 @@ func run() -> void:
 	check(hp.bar2.value == 20, "Health UI disconnects its original actor")
 	var screen = game.get_node("DeathScreen")
 	screen.bind_actor(b)
-	b.take_damage(90)
+	kill_actor(b)
 	check(screen.visible and screen.get_node("%Countdown").text == "5", "Death UI subscribes to the bound actor lifecycle component")
 	screen.bind_actor(a)
 	check(not screen.visible, "Rebinding death UI clears the previous death state")
@@ -45,3 +45,9 @@ func run() -> void:
 	game.free()
 	print("RESULT: ", failures.size(), " failures")
 	quit(0 if failures.is_empty() else 1)
+
+# Death fixtures now deplete one cell per hit, including duplicate-death coverage.
+func kill_actor(actor: Node) -> void:
+	for index in range(9):
+		actor.take_damage(actor.max_hp)
+		if actor.is_dead: return

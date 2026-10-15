@@ -49,3 +49,16 @@ func take_all_items() -> Array:
 	var result := items.duplicate()
 	for item in result: item.holder = null
 	items.clear(); changed.emit(); return result
+
+func try_pick_up(pickup: Node2D) -> bool:
+	return _alive() and is_instance_valid(pickup) and pickup.has_method("try_pick_up") and pickup.try_pick_up(actor)
+func pick_up_nearest() -> bool:
+	if not _alive(): return false
+	var candidates: Array = []
+	for pickup in get_tree().get_nodes_in_group("health_item_pickup"):
+		if pickup.can_pick_up(actor): candidates.append(pickup)
+	candidates.sort_custom(func(a, b):
+		var da: float = a.global_position.distance_squared_to(actor.global_position)
+		var db: float = b.global_position.distance_squared_to(actor.global_position)
+		return a.get_instance_id() < b.get_instance_id() if is_equal_approx(da, db) else da < db)
+	return not candidates.is_empty() and try_pick_up(candidates[0])

@@ -12,6 +12,10 @@ func run() -> void:
 	if not p.has_method("get_health_item_drop_component"): world.free(); quit(1); return
 	var Data = load("res://scene/script/items/health_item_data.gd")
 	var drop = p.get_health_item_drop_component(); var c = p.get_health_item_component()
+	var placed = load("res://scene/health_item_pickup.tscn").instantiate(); world.add_child(placed)
+	placed.global_position = p.global_position
+	check(placed.can_pick_up(p), "Independently placed item scene starts with a full reserve")
+	placed.free()
 	var partial = Data.new(30); partial.remaining = 12
 	var ground = drop.spawn_item(partial, p.global_position + Vector2(100,0))
 	check(not ground.try_pick_up(p), "Distant pickup is rejected")

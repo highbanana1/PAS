@@ -2,6 +2,7 @@ extends CanvasLayer
 @export var selected_style: StyleBoxFlat
 @export var idle_style: StyleBoxFlat
 var _actor: Node2D
+var _items: Node
 var _controller: Node
 @onready var guard_bar: ProgressBar = %GuardBar
 @onready var gun_slot: PanelContainer = %GunSlot
@@ -33,9 +34,15 @@ func bind_actor(actor: Node2D) -> void:
 	_actor.tree_exiting.connect(unbind_actor)
 	_update_weapon(_controller.current_weapon)
 	_update_guard(_controller.guard_value, _controller.max_guard)
+	if actor.has_method("get_health_item_component"):
+		_items = actor.get_health_item_component()
+		_items.changed.connect(_update_items)
+	_update_items()
 	show()
 
 func unbind_actor() -> void:
+	if is_instance_valid(_items) and _items.changed.is_connected(_update_items): _items.changed.disconnect(_update_items)
+	_items = null
 	if is_instance_valid(_controller):
 		if _controller.weapon_changed.is_connected(_update_weapon): _controller.weapon_changed.disconnect(_update_weapon)
 		if _controller.guard_changed.is_connected(_update_guard): _controller.guard_changed.disconnect(_update_guard)
@@ -53,3 +60,14 @@ func _update_weapon(weapon: int) -> void:
 func _update_guard(value: float, maximum: float) -> void:
 	guard_bar.max_value = maximum
 	guard_bar.value = value
+
+func _update_items() -> void:
+	var has_item: bool = is_instance_valid(_items) and not _items.items.is_empty()
+	var is_selected: bool = is_instance_valid(_items) and _items.selected
+	%ItemSlot1.add_theme_stylebox_override("panel", selected_style if is_selected else idle_style)
+	%HealthItemIcon.visible = has_item
+	%HealthItemProgress.visible = has_item
+	%HealthItemCount.text = str(_items.items.size()) if has_item else ""
+	if has_item:
+		%HealthItemProgress.max_value = _items.items[0].capacity
+		%HealthItemProgress.value = _items.items[0].remaining

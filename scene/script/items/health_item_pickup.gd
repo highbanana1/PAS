@@ -1,4 +1,6 @@
 extends Node2D
+const Data = preload("res://scene/script/items/health_item_data.gd")
+@export_range(1.0, 1000.0, 1.0) var stored_hp: float = 30.0
 const TEXTURE = preload("res://asset/pic/healthitem.png")
 @export_range(1.0, 200.0, 1.0) var pickup_distance: float = 40.0
 var item: RefCounted
@@ -7,6 +9,7 @@ var _prompt: Label
 func configure(data: RefCounted) -> void:
 	item = data
 func _ready() -> void:
+	if item == null: item = Data.new(stored_hp)
 	add_to_group("health_item_pickup")
 	var sprite := Sprite2D.new()
 	var atlas := AtlasTexture.new(); atlas.atlas = TEXTURE

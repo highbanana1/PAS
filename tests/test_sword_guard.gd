@@ -110,17 +110,17 @@ func _run() -> void:
 	check(player.real_hp == hp_before - 30, "Broken guard cannot absorb another attack")
 	Input.action_press("block")
 	weapons.recover_guard(1.0)
-	check(weapons.guard_value == 0, "Holding block after exhaustion does not regenerate guard")
+	check(is_equal_approx(weapons.guard_value, 100.0 / 15.0) and not weapons.is_guarding, "Holding block during exhaustion keeps recovery running without defense")
 	Input.action_release("block")
 	weapons.set_guarding(false)
 	weapons.recover_guard(1.0)
-	check(is_equal_approx(weapons.guard_value, 100.0 / 15.0) and is_equal_approx(hud.get_node("%GuardBar").value, 100.0 / 15.0), "Releasing block restores guard and updates the HUD")
+	check(is_equal_approx(weapons.guard_value, 200.0 / 15.0) and is_equal_approx(hud.get_node("%GuardBar").value, 200.0 / 15.0), "Releasing block restores guard and updates the HUD")
 	weapons.set_guarding(true, Vector2.RIGHT)
 	weapons.equip_weapon(0)
 	check(not weapons.is_guarding and not sword.visible and player.get_node("gun").is_processing(), "Weapon switch cancels guard and only activates the selected weapon")
 	weapons.equip_weapon(1)
 	player.respawn_delay = 0.15
-	player.take_damage(90)
+	kill_actor(player)
 	check(not sword.visible and not weapons.is_guarding and not player.get_node("gun").is_processing(), "Death disables both weapons and guard")
 	scroll.button_index = MOUSE_BUTTON_WHEEL_DOWN
 	weapons._unhandled_input(scroll)
@@ -136,3 +136,9 @@ func _run() -> void:
 	game.free()
 	print("RESULT: ", failures.size(), " failures")
 	quit(0 if failures.is_empty() else 1)
+
+# Death fixtures now deplete one cell per hit, including duplicate-death coverage.
+func kill_actor(actor: Node) -> void:
+	for index in range(9):
+		actor.take_damage(actor.max_hp)
+		if actor.is_dead: return

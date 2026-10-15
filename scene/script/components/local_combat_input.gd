@@ -34,8 +34,9 @@ func handle_event(event: InputEvent) -> bool:
 func tick(delta: float) -> void:
 	if not enabled(): return
 	controller.aim(actor.get_global_mouse_position() - controller.get_aim_origin())
-	var guard_requested := is_guard_requested()
-	controller.set_guarding(guard_requested)
-	if not guard_requested and Input.is_action_just_pressed("fire"):
+	# Attack has priority over held defense; the controller cancels guard first.
+	if Input.is_action_just_pressed("fire"):
 		controller.attack(controller.aim_direction)
+	else:
+		controller.set_guarding(is_guard_requested())
 	controller.recover_guard(delta)

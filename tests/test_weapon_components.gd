@@ -40,7 +40,7 @@ func run() -> void:
 	for frame in range(600): guard.tick(1.0/60.0)
 	check(guard.value == 0.0 and not guard.is_guarding and actor.get_guard_component().value == 100.0, "Guard clocks are independent and drain exactly once")
 	guard.tick(15.0)
-	check(guard.value == 0.0, "Exhausted held guard cannot regenerate")
+	check(guard.value == 100.0 and not guard.is_guarding, "Exhausted held guard recovers fully without defending")
 	guard.request_guard(false, Vector2.RIGHT); guard.tick(15.0)
 	check(guard.value == 100.0, "Generic guard fully recovers in fifteen seconds after release")
 	guard.request_guard(true,Vector2.RIGHT)

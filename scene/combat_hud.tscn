@@ -1,10 +1,22 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://scene/script/combat_hud.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://asset/pic/gun.png" id="2_gun"]
 [ext_resource type="Texture2D" path="res://asset/pic/sword.png" id="3_sword"]
 [ext_resource type="Texture2D" path="res://asset/pic/shield.svg" id="4_shield"]
 [ext_resource type="FontFile" path="res://asset/fonts/fusion-pixel-12px-monospaced-zh_hans.otf.woff2" id="5_font"]
+
+[ext_resource type="Texture2D" path="res://asset/pic/healthitem.png" id="6_health"]
+
+[sub_resource type="AtlasTexture" id="Atlas_health"]
+atlas = ExtResource("6_health")
+region = Rect2(576, 576, 960, 832)
+
+[sub_resource type="StyleBoxFlat" id="Style_health_track"]
+bg_color = Color(0.12, 0.04, 0.035, 1)
+
+[sub_resource type="StyleBoxFlat" id="Style_health_fill"]
+bg_color = Color(1, 0.3, 0.2, 1)
 
 [sub_resource type="AtlasTexture" id="Atlas_gun"]
 atlas = ExtResource("2_gun")
@@ -235,6 +247,53 @@ layout_mode = 2
 size_flags_horizontal = 0
 mouse_filter = 2
 theme_override_styles/panel = SubResource("Style_idle")
+
+[node name="Content" type="VBoxContainer" parent="Overlay/BottomBar/Item1/ItemSlot1"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 1
+
+[node name="HealthItemIcon" type="TextureRect" parent="Overlay/BottomBar/Item1/ItemSlot1/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 20)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+texture = SubResource("Atlas_health")
+expand_mode = 1
+stretch_mode = 5
+visible = false
+
+[node name="HealthItemProgress" type="ProgressBar" parent="Overlay/BottomBar/Item1/ItemSlot1/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/background = SubResource("Style_health_track")
+theme_override_styles/fill = SubResource("Style_health_fill")
+max_value = 30.0
+step = 0.01
+show_percentage = false
+visible = false
+
+[node name="Footer" type="HBoxContainer" parent="Overlay/BottomBar/Item1/ItemSlot1/Content"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Label" type="Label" parent="Overlay/BottomBar/Item1/ItemSlot1/Content/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
+text = "3"
+
+[node name="HealthItemCount" type="Label" parent="Overlay/BottomBar/Item1/ItemSlot1/Content/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("5_font")
+theme_override_font_sizes/font_size = 12
 
 [node name="Item2" type="VBoxContainer" parent="Overlay/BottomBar"]
 layout_mode = 2

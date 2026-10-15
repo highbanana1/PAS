@@ -44,10 +44,16 @@ func run() -> void:
 	check(not player.get_carry_component().try_pick_up(item), "Delivered items cannot be reclaimed accidentally")
 	var health_updates: Array[int] = []
 	actor.health_changed.connect(func(): health_updates.append(1))
-	actor.take_damage(90)
+	kill_actor(actor)
 	health_updates.clear()
 	actor.respawn(Vector2.ZERO)
 	check(health_updates.size() == 1, "Respawn emits one legacy health update for one health reset")
 	game.free(); other.free(); actor.free(); a.free(); b.free(); ta.free(); tb.free()
 	print("RESULT: ", failures.size(), " failures")
 	quit(0 if failures.is_empty() else 1)
+
+# Death fixtures now deplete one cell per hit, including duplicate-death coverage.
+func kill_actor(actor: Node) -> void:
+	for index in range(9):
+		actor.take_damage(actor.max_hp)
+		if actor.is_dead: return

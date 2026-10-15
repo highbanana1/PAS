@@ -15,12 +15,22 @@ const HurtPresentation = preload("res://scene/script/components/player_hurt_pres
 var _hurt_presentation = HurtPresentation.new()
 const HealthItems = preload("res://scene/script/components/health_item_component.gd")
 var _health_items = HealthItems.new()
+const ItemInput = preload("res://scene/script/components/local_item_input.gd")
+var _item_input = ItemInput.new()
+@export_range(0.1, 30.0, 0.1, "suffix:s") var health_item_use_duration: float = 2.0:
+	get: return _health_items.use_duration
+	set(value): _health_items.use_duration = value
+@export_range(0.1, 2.0, 0.05, "suffix:s") var health_item_hold_threshold: float = 0.3:
+	get: return _item_input.hold_threshold
+	set(value): _item_input.hold_threshold = value
 const HealthItemDrops = preload("res://scene/script/components/health_item_drop_component.gd")
 var _health_item_drops = HealthItemDrops.new()
 var _health = Health.new()
 var _receiver = Receiver.new()
 
 func _init() -> void:
+	_item_input.name = "LocalItemInput"
+	add_child(_item_input)
 	_health_item_drops.name = "HealthItemDrops"
 	add_child(_health_item_drops)
 	_health_items.name = "HealthItems"
@@ -152,6 +162,7 @@ var jump_count: int:
 
 func _ready() -> void:
 	_health_items.configure(self)
+	_item_input.configure(self, _health_items)
 	_health_item_drops.configure(self)
 	_motor.configure(self)
 	_health.damage_cell_size = health_per_cell

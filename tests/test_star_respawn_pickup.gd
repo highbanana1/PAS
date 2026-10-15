@@ -37,7 +37,7 @@ func _run() -> void:
 	await settle()
 	star._on_player_touch(player)
 	star._process(0.0)
-	player.take_damage(90)
+	kill_actor(player)
 	var released_position: Vector2 = star.global_position
 	await create_timer(0.35).timeout
 	check(not player.is_dead, "Player revives normally at an overlapping spawn point")
@@ -58,7 +58,7 @@ func _run() -> void:
 	player.respawn_delay = 0.15
 	await settle()
 	star._on_player_touch(player)
-	player.take_damage(90)
+	kill_actor(player)
 	released_position = star.global_position
 	await create_timer(0.35).timeout
 	check(not star.is_picked and star.global_position.is_equal_approx(released_position), "Distant respawn never teleports the star")
@@ -67,7 +67,7 @@ func _run() -> void:
 	check(star.ref == player and star.is_picked, "Returning from a distant spawn can pick up on first approach")
 	# A different living player must not be blocked by the former carrier's death.
 	player.respawn_delay = 0.5
-	player.take_damage(90)
+	kill_actor(player)
 	var other = load("res://scene/maincharac.tscn").instantiate()
 	other.is_locally_controlled = false
 	other.scale = Vector2(0.03, 0.03)
@@ -80,3 +80,9 @@ func _run() -> void:
 	game.free()
 	print("RESULT: ", failures.size(), " failures")
 	quit(0 if failures.is_empty() else 1)
+
+# Death fixtures now deplete one cell per hit, including duplicate-death coverage.
+func kill_actor(actor: Node) -> void:
+	for index in range(9):
+		actor.take_damage(actor.max_hp)
+		if actor.is_dead: return

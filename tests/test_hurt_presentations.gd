@@ -50,7 +50,7 @@ func run() -> void:
 	var position_before: Vector2 = player.global_position
 	var velocity_before: Vector2 = player.velocity
 	player.receive_attack(10,player.global_position+Vector2(60,0),true)
-	check(player_hurt.is_playing and player.real_hp == 80, "Player damage starts its own hurt animation")
+	check(player_hurt.is_playing and player.real_hp == 140, "Player damage starts its own hurt animation")
 	player_hurt.set_process(false); player_hurt._process(0.06)
 	check(sprite.material != original_material and sprite.rotation != original_rotation, "Player flashes white and leans back visually")
 	player_hurt._process(0.1)
@@ -61,12 +61,18 @@ func run() -> void:
 	await create_timer(0.2).timeout
 	player.get_weapon_controller().set_guarding(true,Vector2.RIGHT)
 	player.receive_attack(10,player.global_position+Vector2(60,0),true)
-	check(not player_hurt.is_playing and player.real_hp == 80, "Successful guard never plays a player damage animation")
+	check(not player_hurt.is_playing and player.real_hp == 140, "Successful guard never plays a player damage animation")
 	player.get_weapon_controller().set_guarding(false)
 	player.take_damage(10)
 	check(player_hurt.is_playing, "Unblockable contact-style damage also plays the player animation")
-	player.take_damage(90)
+	kill_actor(player)
 	check(player.is_dead and not player_hurt.is_playing and sprite.material == original_material and sprite.self_modulate == original_color, "Death clears hurt presentation without changing the death flow")
 	game.free()
 	print("RESULT: ", failures.size(), " failures")
 	quit(0 if failures.is_empty() else 1)
+
+# Death fixtures now deplete one cell per hit, including duplicate-death coverage.
+func kill_actor(actor: Node) -> void:
+	for index in range(9):
+		actor.take_damage(actor.max_hp)
+		if actor.is_dead: return
