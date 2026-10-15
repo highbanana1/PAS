@@ -37,13 +37,13 @@ func run() -> void:
 	shots[2]._on_area_2d_body_entered(enemy)
 	check(enemy.health == 0 and enemy.is_queued_for_deletion(), "Third pellet hit kills the basic enemy")
 	clear_shots(); enemy.free()
-	w.attack(Vector2.RIGHT); var next_angles: Array = []
+	gun.get_shot_cycle().tick(gun.shot_interval); w.attack(Vector2.RIGHT); var next_angles: Array = []
 	for pellet in get_nodes_in_group("bullet"): next_angles.append(rad_to_deg(pellet.rotation))
 	next_angles.sort()
 	check(next_angles != angles, "Successive shots do not reuse a fixed spread pattern")
 	clear_shots()
 	gun.pellet_count = 1; gun.spread_degrees = 15
-	w.attack(Vector2.UP); shots = get_nodes_in_group("bullet")
+	gun.get_shot_cycle().tick(gun.shot_interval); w.attack(Vector2.UP); shots = get_nodes_in_group("bullet")
 	check(shots.size() == 1 and absf(angle_difference(shots[0].rotation,-PI/2))<0.001, "Single pellet configuration shoots straight without division by zero")
 	clear_shots(); gun.pellet_count = 5; gun.spread_degrees = 15
 	gun.set_spread_seed(2718); var repeat = gun.generate_pellet_offsets(); gun.set_spread_seed(2718)
@@ -62,7 +62,7 @@ func run() -> void:
 	check(another.generate_pellet_offsets() == initial, "Each weapon owns an independent random stream")
 	another.free()
 	gun.spread_degrees = 0
-	w.attack(Vector2.LEFT); shots = get_nodes_in_group("bullet")
+	gun.get_shot_cycle().tick(gun.shot_interval); w.attack(Vector2.LEFT); shots = get_nodes_in_group("bullet")
 	var straight := true
 	for pellet in shots: straight = straight and absf(angle_difference(pellet.rotation,PI))<0.001
 	check(shots.size() == 5 and straight, "Zero spread remains five aligned leftward pellets")

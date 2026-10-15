@@ -2,14 +2,33 @@
 
 [ext_resource type="Script" uid="uid://lkowvir6438j" path="res://scene/script/gun.gd" id="1_h5mb1"]
 [ext_resource type="Texture2D" uid="uid://cqawi6mu67nil" path="res://asset/pic/gun.png" id="2_2ovx3"]
+[ext_resource type="Script" path="res://scene/script/components/shotgun_cycle.gd" id="3_cycle"]
+[ext_resource type="Shader" path="res://asset/shaders/shotgun_body.gdshader" id="4_body"]
+
+[sub_resource type="ShaderMaterial" id="Material_body"]
+shader = ExtResource("4_body")
 
 [node name="gun" type="Node2D" unique_id=2007606495]
 script = ExtResource("1_h5mb1")
 
-[node name="Sprite2D" type="Sprite2D" parent="." unique_id=57227787]
+[node name="ShotCycle" type="Node2D" parent="."]
+script = ExtResource("3_cycle")
+
+[node name="Body" type="Sprite2D" parent="ShotCycle" unique_id=57227787]
 z_index = 1
+texture_filter = 1
+material = SubResource("Material_body")
 scale = Vector2(0.5, 0.5)
 texture = ExtResource("2_2ovx3")
+
+[node name="Pump" type="Sprite2D" parent="ShotCycle"]
+z_index = 2
+texture_filter = 1
+position = Vector2(208, 16)
+scale = Vector2(0.5, 0.5)
+texture = ExtResource("2_2ovx3")
+region_enabled = true
+region_rect = Rect2(1280, 960, 320, 192)
 
 [node name="Marker2D" type="Marker2D" parent="." unique_id=1176159427]
 position = Vector2(493.99997, -46)

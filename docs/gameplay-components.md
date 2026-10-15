@@ -172,3 +172,11 @@ Bullet.set_fire_light_origin(origin) 接收开火时的世界枪口位置，飞�
 效果在世界根节点生成，记录本发的枪口位置与方向；发射后角色移动或切换武器不会拖动火星。粒子使用独立的视觉随机数，不消耗弹丸散射随机序列。没有碰撞、伤害、输入或全局时间修改，结束自动清理。火星位置按像素取整，颜色和尺寸分档变化，保持像素风。
 
 视觉结构参考开源 Godot 射击反馈示例的枪口闪光思路 https://github.com/profesorshader/example-improved-shooting ，以及含霰弹枪示例的 https://github.com/Jeh3no/Godot-simple-FPS-weapon-system 。本项目效果为独立的二维像素实现，没有复制其代码或素材。
+
+## 霰弹枪射击间隔与上膛
+
+Gun.shot_interval 默认 0.65 秒，在玩家 gun 节点 Inspector 的 Shot Interval 调整。成功射击启动同长度的 ShotCycle：短后坐、护木后拉、短暂停留、推回并回位；周期结束前拒绝下一发，不生成额外弹丸或枪口火焰。维持左键单击射击方式，没有改成长按自动开火。
+
+ShotCycle 独立组件位于 scene/script/components/shotgun_cycle.gd，接口 begin_cycle(duration)、tick(delta)、is_busy()、cancel_visual()、resume_visual()、reset_state()；Gun.get_shot_cycle() 可获取组件。动画拆分并复用 asset/pic/gun.png 的枪身与护木，asset/shaders/shotgun_body.gdshader 显示护木移走后的枪管，未新增外部枪素材。动画只移动 ShotCycle 与 Pump 的显示位置；枪口 Marker2D、瞄准及子弹生成位置保持独立。
+
+切换到剑恢复枪的显示姿势但保留冷却，切回枪不能绕过上膛。隐藏和远程角色的枪也会独立推进周期；剑攻击、格挡及角色移动不等待枪。复活的统一 reset_state 清除周期并回位。上膛不读取本地输入、不修改全局时间、不共享角色状态；后续联网应由权威射击事件触发各自周期。组件初稿由 DeepSeek Pro 起草，已核对并修正隐藏时显示状态，接入项目测试。

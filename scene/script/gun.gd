@@ -7,6 +7,9 @@ const MUZZLE_FLASH = preload("res://scene/muzzle_flash.tscn")
 @export_range(1, 100) var pellet_damage: int = 2
 @export_range(0.0, 0.25, 0.01) var pellet_speed_variation: float = 0.08
 
+## One complete recoil/pump cycle before the next shot.
+@export_range(0.1, 2.0, 0.05, "suffix:s") var shot_interval: float = 0.65
+
 var _spread_rng := RandomNumberGenerator.new()
 
 func _init() -> void:
@@ -16,9 +19,11 @@ func set_spread_seed(value: int) -> void:
 	_spread_rng.seed = value
 
 @onready var muzzle: Marker2D = $Marker2D
+@onready var _shot_cycle: Node2D = $ShotCycle
 
 func set_active(enabled: bool) -> void:
 	super.set_active(enabled)
+	if enabled and is_instance_valid(_shot_cycle): _shot_cycle.resume_visual()
 	# Remote gun pose/commands are supplied externally, never polled locally.
 	set_process(enabled and is_instance_valid(actor) and actor.get("is_locally_controlled") != false)
 
@@ -56,9 +61,25 @@ func attack(direction: Vector2) -> bool:
 		bullet.set_fire_light_origin(muzzle.global_position)
 		get_tree().root.add_child(bullet)
 	play_fire_effect()
+	_shot_cycle.begin_cycle(shot_interval)
 	return true
 
 func play_fire_effect() -> void:
 	var effect = MUZZLE_FLASH.instantiate()
 	get_tree().root.add_child(effect)
 	effect.play_at(muzzle.global_position, Vector2.RIGHT.rotated(global_rotation))
+
+func get_shot_cycle() -> Node2D:
+	return _shot_cycle
+
+func can_attack() -> bool:
+	return super.can_attack() and not is_busy()
+
+func is_busy() -> bool:
+	return is_instance_valid(_shot_cycle) and _shot_cycle.is_busy()
+
+func cancel_attack() -> void:
+	if is_instance_valid(_shot_cycle): _shot_cycle.cancel_visual()
+
+func reset_state() -> void:
+	if is_instance_valid(_shot_cycle): _shot_cycle.reset_state()
