@@ -146,3 +146,5 @@ CharacterMotor.grant_extra_air_jump() -> bool 是外部授予临时机会的接�
 物品物理设置在 health_item_pickup.tscn 与 jump_item_pickup.tscn 根节点：Gravity Scale 调整重力强度，Collision Mask 默认仅环境第 1 层，Collision Layer 为 0。锁定旋转以保持图标和 F 提示朝向稳定；CollisionShape2D 使用 18×18 矩形。F 距离拾取与背包储量规则保持原样。
 
 开局默认选择第一个物品槽（3 号位），默认开启自动拾取。InventoryComponent.auto_pickup_enabled 保存本人设置；toggle_auto_pickup() 切换，tick_auto_pickup(delta) 每 0.15 秒检查并按最近顺序填满空槽，只在拾取距离内且存活时生效。本地输入按 T 切换，关闭后 F 仍可手动拾取；背包标题显示自动/手动状态。死亡不会改变自动拾取偏好，复活后可以重新自动拾取附近掉落物，但不会继续死亡前的物品使用。
+
+素材使用优先级：优先复用 asset 文件夹内现有素材，再考虑新增。枪的子弹贴图使用 asset/pic/bullet_standred.png，Sprite2D 区域裁取有效像素并等比缩放为圆形，保持原可见高度；子弹速度、伤害和碰撞配置保持原样。

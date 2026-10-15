@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://bfvad4wbgll18"]
 
-[ext_resource type="Texture2D" uid="uid://byi2tiu3fiwjw" path="res://asset/pic/bullet.png" id="1_qwydi"]
+[ext_resource type="Texture2D" path="res://asset/pic/bullet_standred.png" id="1_qwydi"]
 [ext_resource type="Script" uid="uid://ddcoxem2yejkr" path="res://scene/script/bullet.gd" id="1_xw300"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_xw300"]
@@ -12,7 +12,9 @@ script = ExtResource("1_xw300")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=828095650]
 position = Vector2(-4.2351647e-22, -1.1920929e-07)
-scale = Vector2(0.044, 0.022)
+scale = Vector2(0.008555556, 0.008555556)
+region_enabled = true
+region_rect = Rect2(384, 512, 1152, 1152)
 texture = ExtResource("1_qwydi")
 
 [node name="VisibleOnScreenNotifier2D" type="VisibleOnScreenNotifier2D" parent="." unique_id=248940759]
