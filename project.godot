@@ -27,6 +27,11 @@ enabled=PackedStringArray("res://addons/agent/plugin.cfg", "res://addons/godot_m
 
 [input]
 
+item_auto_pickup_toggle={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":84)]
+}
+
 item_select_2={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"physical_keycode":52)]

@@ -84,6 +84,9 @@ func _setup_item_slots() -> void:
 		var count := Label.new(); count.mouse_filter = Control.MOUSE_FILTER_IGNORE; count.add_theme_font_override("font",%HealthItemCount.get_theme_font("font")); count.add_theme_font_size_override("font_size",12); footer.add_child(count); _counts.append(count)
 
 func _update_items() -> void:
+	var heading: Label = %ItemSlot1.get_parent().get_node("Heading")
+	heading.text = "物品·自动" if is_instance_valid(_items) and _items.auto_pickup_enabled else "物品·手动"
+	heading.tooltip_text = "T 切换自动拾取，F 手动拾取"
 	for index in range(3):
 		var slot: Control = [%ItemSlot1,%ItemSlot2,%ItemSlot3][index]
 		var has_item: bool = is_instance_valid(_items) and index < _items.items.size()

@@ -41,6 +41,8 @@ func handle_event(event: InputEvent) -> bool:
 	if event.is_action_pressed("item_use") and items.selected:
 		if items.use_selected(): reset_state()
 		return true
+	if event.is_action_pressed("item_auto_pickup_toggle"):
+		items.toggle_auto_pickup(); return true
 	if event.is_action_pressed("item_pickup"):
 		items.pick_up_nearest(); return true
 	return false
@@ -48,6 +50,7 @@ func _process(delta: float) -> void:
 	tick(delta)
 func tick(delta: float) -> void:
 	if not enabled(): reset_state(); return
+	items.tick_auto_pickup(delta)
 	if not held or not is_finite(delta) or delta <= 0.0: return
 	if items.current_item() != _held_item or items.selected_index != _held_slot:
 		reset_state(); return

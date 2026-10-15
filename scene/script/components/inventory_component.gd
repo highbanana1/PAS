@@ -2,8 +2,10 @@ extends Node
 signal changed()
 var actor: Node2D
 var items: Array = []
-var selected: bool = false
+var selected: bool = true
 var selected_index: int = 0
+var auto_pickup_enabled: bool = true
+var _pickup_wait: float = 0.0
 var using_continuously: bool = false
 @export_range(1, 3, 1) var slot_count: int = 3
 @export_range(0.1, 30.0, 0.1) var use_duration: float = 2.0
@@ -60,3 +62,17 @@ func pick_up_nearest() -> bool:
 		var db: float = b.global_position.distance_squared_to(actor.global_position)
 		return a.get_instance_id() < b.get_instance_id() if is_equal_approx(da,db) else da < db)
 	return not candidates.is_empty() and try_pick_up(candidates[0])
+
+func toggle_auto_pickup() -> bool:
+	auto_pickup_enabled = not auto_pickup_enabled
+	_pickup_wait = 0.0
+	changed.emit()
+	return auto_pickup_enabled
+
+func tick_auto_pickup(delta: float) -> void:
+	if not _alive() or not auto_pickup_enabled or items.size() >= slot_count or not is_finite(delta) or delta <= 0.0: return
+	_pickup_wait -= delta
+	if _pickup_wait > 0.0: return
+	_pickup_wait = 0.15
+	# Bounded by slot capacity; successful pickups leave the world group immediately.
+	while items.size() < slot_count and pick_up_nearest(): pass

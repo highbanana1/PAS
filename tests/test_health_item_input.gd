@@ -42,9 +42,10 @@ func run() -> void:
 	c.take_all_items(); c.add_item(Data.new(30)); input.handle_event(action("item_select_1")); input.handle_event(action("item_select_1",false))
 	input.handle_event(action("item_use"))
 	check(p.max_hp == 180 and p.real_hp == 165 and c.items.is_empty(), "Selected full item E expands exactly one cell and consumes item")
+	input.handle_event(action("item_auto_pickup_toggle"))
 	c.add_item(Data.new(30)); input.handle_event(action("item_select_1")); input.tick(0.3)
 	p.real_hp = 10; p.take_damage(100); p.respawn(p.spawn_position); input.tick(1)
-	check(c.items.is_empty() and not input.held and not c.using_continuously and p.real_hp == 150, "Death drops inventory and respawn never resumes held healing")
+	check(c.items.is_empty() and not c.auto_pickup_enabled and not input.held and not c.using_continuously and p.real_hp == 150, "Death drops inventory and respawn never resumes held healing")
 	p.is_locally_controlled = false
 	check(not input.handle_event(action("item_pickup")) and not input.handle_event(action("item_select_1")), "Remote actors ignore local item input")
 	game.free(); print("RESULT: ", failures.size(), " failures"); quit(0 if failures.is_empty() else 1)
