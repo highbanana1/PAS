@@ -16,6 +16,7 @@ height = 658.0
 collision_layer = 8
 collision_mask = 5
 script = ExtResource("1_f87vc")
+health_item_drop_chance = 1.0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1760389269 groups=["enemy"]]
 z_index = 1

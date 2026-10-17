@@ -12,10 +12,9 @@
 [ext_resource type="Texture2D" uid="uid://b123b502l8adg" path="res://asset/pic/HPlineOut.png" id="7_tqoya"]
 [ext_resource type="Texture2D" uid="uid://dvy0yyio8qro6" path="res://asset/pic/HPlineFill.png" id="8_k65ib"]
 [ext_resource type="Texture2D" uid="uid://cmg0tudkcs1qq" path="res://asset/pic/HPlineIn.png" id="9_wscrc"]
-
 [ext_resource type="PackedScene" path="res://scene/death_screen.tscn" id="13_death_screen"]
-
 [ext_resource type="PackedScene" path="res://scene/combat_hud.tscn" id="14_combat_hud"]
+[ext_resource type="PackedScene" path="res://scene/jump_item_pickup.tscn" id="15_v2gmf"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_wp4xf"]
 texture = ExtResource("2_v0l8b")
@@ -322,7 +321,9 @@ texture_under = ExtResource("8_k65ib")
 texture_over = ExtResource("7_tqoya")
 texture_progress = ExtResource("9_wscrc")
 
+[node name="DeathScreen" parent="." unique_id=98098314 instance=ExtResource("13_death_screen")]
 
-[node name="DeathScreen" parent="." instance=ExtResource("13_death_screen")]
+[node name="CombatHUD" parent="." unique_id=915538906 instance=ExtResource("14_combat_hud")]
 
-[node name="CombatHUD" parent="." instance=ExtResource("14_combat_hud")]
+[node name="JumpItemPickup" parent="." unique_id=1337724559 instance=ExtResource("15_v2gmf")]
+position = Vector2(-39, -81)

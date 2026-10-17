@@ -6,9 +6,8 @@
 [ext_resource type="Shader" uid="uid://l8l43r5bqc01" path="res://shaders/maincharac.gdshader" id="2_xno6r"]
 [ext_resource type="Texture2D" uid="uid://cijvkdnq277cq" path="res://asset/pic/dash.png" id="3_4ps4g"]
 [ext_resource type="Texture2D" uid="uid://dix6gnb4swhbk" path="res://asset/pic/run.PNG" id="3_7g0xw"]
-
 [ext_resource type="PackedScene" path="res://scene/sword.tscn" id="7_sword"]
-[ext_resource type="Script" path="res://scene/script/weapon_controller.gd" id="8_weapons"]
+[ext_resource type="Script" uid="uid://d2jiqfev5fljc" path="res://scene/script/weapon_controller.gd" id="8_weapons"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_4ps4g"]
 shader = ExtResource("2_xno6r")
@@ -161,6 +160,7 @@ size = Vector2(254, 630.75)
 collision_layer = 2
 collision_mask = 257
 script = ExtResource("1_xb537")
+hit_invincibility_time = 1.0
 
 [node name="DashParticles" type="GPUParticles2D" parent="." unique_id=2094130153]
 material = SubResource("ShaderMaterial_4ps4g")
@@ -181,7 +181,7 @@ shape = SubResource("RectangleShape2D_xnvsr")
 [node name="gun" parent="." unique_id=2007606495 instance=ExtResource("2_h5hy6")]
 position = Vector2(4, 100)
 
-[node name="Sword" parent="." instance=ExtResource("7_sword" )]
+[node name="Sword" parent="." unique_id=187067858 instance=ExtResource("7_sword")]
 position = Vector2(4, 100)
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=789323785]
@@ -190,12 +190,12 @@ zoom = Vector2(2.3, 2.3)
 [node name="Timer" type="Timer" parent="." unique_id=1738381320]
 wait_time = 3.0
 
-[node name="RespawnTimer" type="Timer" parent="."]
+[node name="RespawnTimer" type="Timer" parent="." unique_id=1795917172]
 wait_time = 5.0
 one_shot = true
 ignore_time_scale = true
 
-[node name="WeaponController" type="Node" parent="."]
+[node name="WeaponController" type="Node" parent="." unique_id=620397751]
 script = ExtResource("8_weapons")
 
 [connection signal="timeout" from="Timer" to="." method="_on_timer_timeout"]
