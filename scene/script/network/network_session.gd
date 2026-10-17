@@ -13,6 +13,7 @@ signal identity_updated(identity: Dictionary)
 signal player_joined(peer_id: int, player_id: String)
 signal player_left(peer_id: int, player_id: String)
 signal command_result(result: Dictionary)
+signal snapshot_batch_received(batch: Dictionary)
 signal session_closed()
 signal join_failed(reason: String)
 
@@ -22,6 +23,8 @@ const INITIAL_LIFE_ID: int = 1
 const SERVER_PEER_ID: int = 1
 const DEFAULT_PORT: int = 0
 const COMMAND_CHANNEL: int = 1
+const SNAPSHOT_CHANNEL: int = 2
+const MAX_CHANNELS: int = 3
 
 const REJECT_UNKNOWN_PEER: String = "unknown_peer"
 const REJECT_INVALID_ENVELOPE: String = "invalid_envelope"
@@ -58,7 +61,7 @@ func host(port: int = DEFAULT_PORT, options: Dictionary = {}) -> int:
 		epoch = int(Time.get_ticks_usec())
 	var remote_capacity: int = maxi(seats - 1, 1)
 	var peer := ENetMultiplayerPeer.new()
-	var error: int = peer.create_server(port, remote_capacity, 2)
+	var error: int = peer.create_server(port, remote_capacity, MAX_CHANNELS)
 	if error != OK:
 		return error
 	_reset_state()
@@ -85,7 +88,7 @@ func join(address: String, port: int) -> int:
 	if address.is_empty() or port <= 0 or port > 65535:
 		return ERR_INVALID_PARAMETER
 	var peer := ENetMultiplayerPeer.new()
-	var error: int = peer.create_client(address, port, 2)
+	var error: int = peer.create_client(address, port, MAX_CHANNELS)
 	if error != OK:
 		return error
 	_reset_state()
@@ -231,6 +234,20 @@ func drain_command_results() -> Array[Dictionary]:
 	_command_results.clear()
 	return result
 
+## Host-only transport entry for authoritative snapshot batches. The bridge
+## owns the payload; NetworkSession only checks the sender side and channel.
+func broadcast_snapshot_batch(batch: Dictionary) -> int:
+	if not _is_host or not is_active() or batch.is_empty():
+		return ERR_UNCONFIGURED
+	if int(batch.get("match_epoch", -1)) != _match_epoch:
+		return ERR_INVALID_PARAMETER
+	if int(batch.get("server_tick", -1)) < 0:
+		return ERR_INVALID_PARAMETER
+	if not (batch.get("players", null) is Dictionary):
+		return ERR_INVALID_PARAMETER
+	_rpc_snapshot_batch.rpc(batch.duplicate(true))
+	return OK
+
 @rpc("any_peer", "call_remote", "unreliable_ordered", COMMAND_CHANNEL)
 func _rpc_submit_envelope(envelope: Dictionary) -> void:
 	if not _is_host or not _is_active:
@@ -276,6 +293,16 @@ func _rpc_command_result(result: Dictionary) -> void:
 		return
 	_command_results.append(result.duplicate(true))
 	command_result.emit(result.duplicate(true))
+
+@rpc("authority", "call_remote", "unreliable_ordered", SNAPSHOT_CHANNEL)
+func _rpc_snapshot_batch(batch: Dictionary) -> void:
+	if _is_host or not _is_active or _local_identity.is_empty():
+		return
+	if int(multiplayer.get_remote_sender_id()) != SERVER_PEER_ID:
+		return
+	if not batch.has("match_epoch") or not batch.has("server_tick") or not (batch.get("players", null) is Dictionary):
+		return
+	snapshot_batch_received.emit(batch.duplicate(true))
 
 func _process_envelope(sender: int, envelope: Dictionary) -> void:
 	var identity: Dictionary = {}

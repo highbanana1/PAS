@@ -78,6 +78,9 @@ func step() -> void:
 	for player_id: StringName in _players.keys():
 		_step_player(_players[player_id])
 
+func get_tick() -> int:
+	return _tick
+
 func get_snapshot(player_id: StringName) -> Dictionary:
 	if not _players.has(player_id):
 		return {}
