@@ -96,6 +96,9 @@ signal respawn_countdown_changed(seconds_left: float)
 	get: return _lifecycle.delay
 	set(value): _lifecycle.delay = value
 @export var is_locally_controlled: bool = true
+## Set by the offline authority adapter. Movement and respawn then advance via
+## MatchAuthority; the direct input path remains only for unbound compatibility.
+var authority_controlled: bool = false
 var is_dead: bool:
 	get: return _lifecycle.dead
 	set(value): _lifecycle.dead = value
@@ -231,6 +234,7 @@ func _on_death() -> void:
 	dash_timer = 0.0
 	dash.emitting = false
 	$Timer.stop()
+	if authority_controlled: respawn_timer.stop()
 	_carry.drop()
 	set_deferred("collision_layer", 0)
 	set_deferred("collision_mask", 0)
@@ -240,11 +244,18 @@ func _on_death() -> void:
 	$WeaponController.suspend()
 	# Each player owns a timer; dying never pauses or reloads the shared world.
 	character_died.emit()
-	respawn_countdown_changed.emit(respawn_timer.time_left)
+	# Authority-managed respawns stop the real timer, so read the unified value.
+	respawn_countdown_changed.emit(respawn_time_left)
 
 
 func respawn(at_position: Vector2) -> void:
 	_lifecycle.respawn(at_position)
+
+func set_authority_controlled(enabled: bool) -> void:
+	if authority_controlled == enabled: return
+	authority_controlled = enabled
+	_lifecycle.set_authority_managed(enabled)
+	if enabled: respawn_timer.stop()
 
 func _on_respawn_requested(at_position: Vector2) -> void:
 	$Timer.stop()
@@ -279,6 +290,19 @@ func _physics_process(delta: float) -> void:
 		return
 	if get_hit and hitcooltimer <= 0.0:
 		hitcooltimer = hit_invincibility_time
+	if authority_controlled:
+		var facing := signf(velocity.x)
+		animated_sprite.play("run" if facing != 0.0 and is_on_floor() else "idle")
+		if is_dashing:
+			animated_sprite.play("dash")
+			dash.emitting = true
+			if facing != 0.0: dash.scale.x = -1 if facing < 0.0 else 1
+		else:
+			dash.emitting = false
+		if facing != 0.0: animated_sprite.flip_h = facing < 0.0
+		hit_cooldown(delta)
+		_die_logic(real_hp)
+		return
 	var direction := Input.get_axis("left", "right")
 	animated_sprite.play("run" if direction != 0.0 and is_on_floor() else "idle")
 	if is_dashing:
