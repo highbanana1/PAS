@@ -75,22 +75,57 @@ func _check_contract(bridge_script: Script, replica_script: Script) -> void:
 func _test_replica_rejection(replica_script: Script) -> void:
 	var replica = replica_script.new()
 	replica.configure(MATCH_EPOCH)
-	var batch := _batch(MATCH_EPOCH, 10, "player_2", Vector2(12.0, 4.0), Vector2(5.0, 0.0), 3, false)
+	var early := _batch(MATCH_EPOCH, 10, "player_2", Vector2(555.0, 555.0), Vector2.ZERO, 2, false)
+	var early_result: Dictionary = replica.apply_batch(early)
+	check(not bool(early_result.get("applied", true)) and String(early_result.get("reason", "")) == "baseline_required", "Replica rejects a snapshot that arrives before the baseline")
+	check(replica.get_states().is_empty(), "A pre-baseline snapshot does not populate the replica")
+
+	var baseline := {
+		"match_epoch": MATCH_EPOCH,
+		"baseline_tick": 10,
+		"server_tick": 10,
+		"players": {
+			"player_2": {
+				"player_id": "player_2",
+				"tick": 10,
+				"revision": 2,
+				"position": Vector2(4.0, 4.0),
+				"velocity": Vector2.ZERO,
+				"dead": false,
+				"health": 150.0,
+				"max_health": 150.0,
+			},
+		},
+	}
+	var baseline_result: Dictionary = replica.apply_baseline(baseline)
+	check(bool(baseline_result.get("applied", false)), "Replica applies the reliable full baseline")
+	check(bool(replica.has_baseline()), "Replica reports its baseline as applied")
+	check(int(replica.get_last_tick()) == 10, "Replica records the baseline tick")
+	var duplicate_baseline: Dictionary = replica.apply_baseline(baseline)
+	check(String(duplicate_baseline.get("reason", "")) == "duplicate_baseline", "Replica idempotently rejects a duplicate baseline")
+	var stale_baseline := baseline.duplicate(true)
+	stale_baseline["baseline_tick"] = 9
+	stale_baseline["server_tick"] = 9
+	var old_baseline: Dictionary = replica.apply_baseline(stale_baseline)
+	check(String(old_baseline.get("reason", "")) == "stale_baseline", "Replica idempotently rejects an older baseline")
+	check(int(replica.get_last_tick()) == 10, "Rejected baselines leave the applied tick untouched")
+
+	var batch := _batch(MATCH_EPOCH, 11, "player_2", Vector2(12.0, 4.0), Vector2(5.0, 0.0), 3, false)
 	var first: Dictionary = replica.apply_batch(batch)
-	check(bool(first.get("applied", false)), "Replica accepts a fresh authoritative snapshot batch")
-	check(int(replica.get_last_tick()) == 10, "Replica records the applied server tick")
+	check(bool(first.get("applied", false)), "Replica accepts a fresh authoritative snapshot batch above the baseline")
+	check(int(replica.get_last_tick()) == 11, "Replica records the applied server tick")
 	var applied_state: Dictionary = replica.get_state("player_2")
 	check(not applied_state.is_empty() and applied_state.get("position", Vector2.ZERO).is_equal_approx(Vector2(12.0, 4.0)), "Replica exposes the applied player state")
 
 	var duplicate: Dictionary = replica.apply_batch(batch)
 	check(not bool(duplicate.get("applied", true)) and String(duplicate.get("reason", "")) == "regressed_tick", "Replica rejects a duplicate server tick as regressed")
-	var regressed: Dictionary = replica.apply_batch(_batch(MATCH_EPOCH, 9, "player_2", Vector2(999.0, 999.0), Vector2.ZERO, 4, false))
+	var regressed: Dictionary = replica.apply_batch(_batch(MATCH_EPOCH, 10, "player_2", Vector2(999.0, 999.0), Vector2.ZERO, 4, false))
 	check(not bool(regressed.get("applied", true)) and String(regressed.get("reason", "")) == "regressed_tick", "Replica rejects a regressed server tick")
-	var stale_epoch: Dictionary = replica.apply_batch(_batch(MATCH_EPOCH - 1, 11, "player_2", Vector2(777.0, 777.0), Vector2.ZERO, 5, false))
+	var stale_epoch: Dictionary = replica.apply_batch(_batch(MATCH_EPOCH - 1, 12, "player_2", Vector2(777.0, 777.0), Vector2.ZERO, 5, false))
 	check(not bool(stale_epoch.get("applied", true)) and String(stale_epoch.get("reason", "")) == "stale_epoch", "Replica rejects a stale match epoch")
 	var still_applied: Dictionary = replica.get_state("player_2")
 	check(still_applied.get("position", Vector2.ZERO).is_equal_approx(Vector2(12.0, 4.0)), "Rejected snapshots do not move the replica")
-	check(int(replica.get_last_tick()) == 10, "Rejected snapshots do not advance the replica tick")
+	check(int(replica.get_last_tick()) == 11, "Rejected snapshots do not advance the replica tick")
 	check(int(replica.get_rejected_count("regressed_tick")) == 2, "Replica counts both regressed and duplicate batches")
 	check(int(replica.get_rejected_count("stale_epoch")) == 1, "Replica counts stale-epoch batches")
 

@@ -81,6 +81,23 @@ func step() -> void:
 func get_tick() -> int:
 	return _tick
 
+func get_player_ids() -> Array[StringName]:
+	var result: Array[StringName] = []
+	for player_id: StringName in _players.keys():
+		result.append(player_id)
+	return result
+
+## Complete authoritative snapshot set for one authority tick. The bridge uses
+## it to build a baseline and periodic batches from the same source of truth.
+func get_snapshots() -> Dictionary:
+	var result: Dictionary = {}
+	for player_id: StringName in _players.keys():
+		var snapshot: Dictionary = get_snapshot(player_id)
+		if snapshot.is_empty():
+			continue
+		result[String(player_id)] = snapshot
+	return result
+
 func get_snapshot(player_id: StringName) -> Dictionary:
 	if not _players.has(player_id):
 		return {}

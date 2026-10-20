@@ -14,6 +14,9 @@ signal player_joined(peer_id: int, player_id: String)
 signal player_left(peer_id: int, player_id: String)
 signal command_result(result: Dictionary)
 signal snapshot_batch_received(batch: Dictionary)
+signal baseline_received(baseline: Dictionary)
+signal baseline_applied(baseline: Dictionary)
+signal baseline_rejected(result: Dictionary)
 signal session_closed()
 signal join_failed(reason: String)
 
@@ -22,6 +25,7 @@ const MAX_REMOTE_CLIENTS: int = MAX_SEATS - 1
 const INITIAL_LIFE_ID: int = 1
 const SERVER_PEER_ID: int = 1
 const DEFAULT_PORT: int = 0
+const BASELINE_CHANNEL: int = 0
 const COMMAND_CHANNEL: int = 1
 const SNAPSHOT_CHANNEL: int = 2
 const MAX_CHANNELS: int = 3
@@ -32,6 +36,9 @@ const REJECT_STALE_EPOCH: String = "stale_epoch"
 const REJECT_STALE_LIFE: String = "stale_life"
 const REJECT_DUPLICATE_SEQUENCE: String = "duplicate_sequence"
 const REJECT_REGRESSED_SEQUENCE: String = "regressed_sequence"
+const REJECT_INVALID_BASELINE: String = "invalid_baseline"
+const REJECT_DUPLICATE_BASELINE: String = "duplicate_baseline"
+const REJECT_STALE_BASELINE: String = "stale_baseline"
 
 var _is_host: bool = false
 var _is_active: bool = false
@@ -47,6 +54,16 @@ var _last_sequences: Dictionary = {}
 var _commands: Array[Dictionary] = []
 var _rejections: Array[Dictionary] = []
 var _command_results: Array[Dictionary] = []
+var _baseline_sent_count: int = 0
+var _baseline_received_count: int = 0
+var _baseline_applied_count: int = 0
+var _baseline_tick: int = -1
+var _applied_baseline_tick: int = -1
+var _received_baseline: Dictionary = {}
+var _baseline_rejections: Dictionary = {}
+var _was_connected: bool = false
+var _last_close_reason: String = ""
+var _closed_emitted: bool = false
 
 func host(port: int = DEFAULT_PORT, options: Dictionary = {}) -> int:
 	if not is_inside_tree():
@@ -104,15 +121,11 @@ func stop() -> void:
 	var was_active := _is_active
 	_is_active = false
 	_is_host = false
-	if is_inside_tree():
-		var api: MultiplayerAPI = multiplayer
-		var peer: MultiplayerPeer = api.multiplayer_peer
-		if peer != null:
-			peer.close()
-			api.multiplayer_peer = null
+	_close_transport()
 	_reset_state()
+	_last_close_reason = "stopped"
 	if was_active:
-		session_closed.emit()
+		_emit_session_closed()
 
 func is_host() -> bool:
 	return _is_host
@@ -248,6 +261,70 @@ func broadcast_snapshot_batch(batch: Dictionary) -> int:
 	_rpc_snapshot_batch.rpc(batch.duplicate(true))
 	return OK
 
+## Host-only reliable full-baseline delivery. The bridge builds the payload at a
+## single authority tick; NetworkSession only validates the envelope and sends
+## it on the reliable baseline channel before any later live traffic matters.
+func send_baseline(peer_id: int, baseline: Dictionary) -> int:
+	if not _is_host or not is_active() or baseline.is_empty():
+		return ERR_UNCONFIGURED
+	if peer_id <= SERVER_PEER_ID or not _peer_identities.has(peer_id):
+		return ERR_INVALID_PARAMETER
+	if int(baseline.get("match_epoch", -1)) != _match_epoch:
+		return ERR_INVALID_PARAMETER
+	var tick := int(baseline.get("baseline_tick", baseline.get("server_tick", -1)))
+	if tick < 0:
+		return ERR_INVALID_PARAMETER
+	if not (baseline.get("players", null) is Dictionary):
+		return ERR_INVALID_PARAMETER
+	var payload: Dictionary = baseline.duplicate(true)
+	payload["baseline_tick"] = tick
+	payload["server_tick"] = tick
+	_rpc_baseline.rpc_id(peer_id, payload)
+	_baseline_sent_count += 1
+	return OK
+
+func get_baseline_send_count() -> int:
+	return _baseline_sent_count
+
+func has_baseline() -> bool:
+	return _baseline_received_count > 0
+
+func get_baseline_received_count() -> int:
+	return _baseline_received_count
+
+func get_baseline_applied_count() -> int:
+	return _baseline_applied_count
+
+func get_baseline_tick() -> int:
+	return _baseline_tick
+
+func get_applied_baseline_tick() -> int:
+	return _applied_baseline_tick
+
+func get_baseline() -> Dictionary:
+	if _received_baseline.is_empty():
+		return {}
+	return _received_baseline.duplicate(true)
+
+func get_baseline_rejected_count(reason: String) -> int:
+	return int(_baseline_rejections.get(reason, 0))
+
+func get_last_close_reason() -> String:
+	return _last_close_reason
+
+## Called by the bridge after the replica successfully applies the received
+## baseline. It keeps transport observation and gameplay application distinct.
+func mark_baseline_applied(baseline: Dictionary) -> bool:
+	if _is_host or not _is_active or _received_baseline.is_empty():
+		return false
+	var tick := int(baseline.get("baseline_tick", baseline.get("server_tick", -1)))
+	if tick != _baseline_tick or tick <= _applied_baseline_tick:
+		return false
+	_applied_baseline_tick = tick
+	_baseline_applied_count += 1
+	baseline_applied.emit(baseline.duplicate(true))
+	return true
+
 @rpc("any_peer", "call_remote", "unreliable_ordered", COMMAND_CHANNEL)
 func _rpc_submit_envelope(envelope: Dictionary) -> void:
 	if not _is_host or not _is_active:
@@ -303,6 +380,30 @@ func _rpc_snapshot_batch(batch: Dictionary) -> void:
 	if not batch.has("match_epoch") or not batch.has("server_tick") or not (batch.get("players", null) is Dictionary):
 		return
 	snapshot_batch_received.emit(batch.duplicate(true))
+
+@rpc("authority", "call_remote", "reliable", BASELINE_CHANNEL)
+func _rpc_baseline(baseline: Dictionary) -> void:
+	if _is_host or not _is_active or _local_identity.is_empty():
+		return
+	if int(multiplayer.get_remote_sender_id()) != SERVER_PEER_ID:
+		return
+	var tick := int(baseline.get("baseline_tick", baseline.get("server_tick", -1)))
+	if int(baseline.get("match_epoch", -1)) != _match_epoch:
+		_reject_baseline(REJECT_STALE_EPOCH, tick)
+		return
+	if tick < 0 or not (baseline.get("players", null) is Dictionary):
+		_reject_baseline(REJECT_INVALID_BASELINE, tick)
+		return
+	if _baseline_received_count > 0:
+		var reason := REJECT_DUPLICATE_BASELINE if tick >= _baseline_tick else REJECT_STALE_BASELINE
+		_reject_baseline(reason, tick)
+		return
+	_baseline_tick = tick
+	_received_baseline = baseline.duplicate(true)
+	_received_baseline["baseline_tick"] = tick
+	_received_baseline["server_tick"] = tick
+	_baseline_received_count += 1
+	baseline_received.emit(_received_baseline.duplicate(true))
 
 func _process_envelope(sender: int, envelope: Dictionary) -> void:
 	var identity: Dictionary = {}
@@ -374,6 +475,16 @@ func _reject(sender: int, base: Dictionary, reason: String) -> void:
 	if sender != SERVER_PEER_ID:
 		_rpc_command_result.rpc_id(sender, rejected)
 
+func _reject_baseline(reason: String, tick: int) -> void:
+	_baseline_rejections[reason] = int(_baseline_rejections.get(reason, 0)) + 1
+	var result := {
+		"accepted": false,
+		"applied": false,
+		"reason": reason,
+		"tick": tick,
+	}
+	baseline_rejected.emit(result)
+
 func _make_identity(peer_id: int, seat: int, life_id: int) -> Dictionary:
 	return {
 		"player_id": "player_%d" % seat,
@@ -424,18 +535,60 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	player_left.emit(peer_id, player_id)
 
 func _on_connected_to_server() -> void:
-	pass
+	_was_connected = true
 
 func _on_connection_failed() -> void:
 	if _is_host:
 		return
+	if not _is_active:
+		return
 	_is_active = false
+	_was_connected = false
+	_close_transport()
+	_last_close_reason = "connection_failed"
 	join_failed.emit("connection_failed")
 
 func _on_server_disconnected() -> void:
 	if _is_host:
 		return
+	_handle_server_disconnect("server_disconnected")
+
+func _process(_delta: float) -> void:
+	if not _is_active or _is_host or not _was_connected:
+		return
+	if not is_inside_tree():
+		return
+	var api: MultiplayerAPI = multiplayer
+	var peer: MultiplayerPeer = api.multiplayer_peer
+	if peer == null:
+		_handle_server_disconnect("transport_lost")
+		return
+	if peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
+		_handle_server_disconnect("connection_lost")
+
+func _handle_server_disconnect(reason: String) -> void:
+	if _is_host or not _is_active:
+		return
 	_is_active = false
+	_was_connected = false
+	_close_transport()
+	_last_close_reason = reason
+	_emit_session_closed()
+
+func _close_transport() -> void:
+	if not is_inside_tree():
+		return
+	var api: MultiplayerAPI = multiplayer
+	var peer: MultiplayerPeer = api.multiplayer_peer
+	if peer == null:
+		return
+	peer.close()
+	api.multiplayer_peer = null
+
+func _emit_session_closed() -> void:
+	if _closed_emitted:
+		return
+	_closed_emitted = true
 	session_closed.emit()
 
 func _reset_state() -> void:
@@ -451,6 +604,16 @@ func _reset_state() -> void:
 	_commands.clear()
 	_rejections.clear()
 	_command_results.clear()
+	_baseline_sent_count = 0
+	_baseline_received_count = 0
+	_baseline_applied_count = 0
+	_baseline_tick = -1
+	_applied_baseline_tick = -1
+	_received_baseline = {}
+	_baseline_rejections.clear()
+	_was_connected = false
+	_last_close_reason = ""
+	_closed_emitted = false
 
 func _exit_tree() -> void:
 	if _is_active:

@@ -10,6 +10,12 @@ extends Node
 
 signal replicas_updated(batch: Dictionary)
 signal snapshot_rejected(result: Dictionary)
+signal baseline_received(baseline: Dictionary)
+signal baseline_applied(baseline: Dictionary)
+signal baseline_rejected(result: Dictionary)
+signal baseline_sent(peer_id: int, baseline: Dictionary)
+signal session_closed()
+signal combat_state_changed(active: bool)
 
 const MatchAuthorityScript = preload("res://scene/script/network/match_authority.gd")
 const SnapshotReplicaScript = preload("res://scene/script/network/snapshot_replica.gd")
@@ -43,6 +49,16 @@ var _command_counts: Dictionary = {}
 var _last_applied_batch: Dictionary = {}
 var _last_applied_tick: int = -1
 var _last_rejection: Dictionary = {}
+var _pending_baseline_peers: Dictionary = {}
+var _baseline_sent_count: int = 0
+var _last_baseline_sent: Dictionary = {}
+var _baseline_received_count: int = 0
+var _baseline_applied_count: int = 0
+var _last_baseline: Dictionary = {}
+var _last_baseline_tick: int = -1
+var _baseline_rejections: Dictionary = {}
+var _session_closed: bool = false
+var _combat_active: bool = false
 
 func configure(session_node: Node, authority_instance = null) -> bool:
 	if _configured or not is_instance_valid(session_node):
@@ -63,13 +79,27 @@ func configure(session_node: Node, authority_instance = null) -> bool:
 			return false
 		replica.configure(session.get_match_epoch())
 		_set_local_identity()
+		if not session.player_joined.is_connected(_on_player_joined):
+			session.player_joined.connect(_on_player_joined)
+		if not session.player_left.is_connected(_on_player_left):
+			session.player_left.connect(_on_player_left)
 	else:
 		if not session.snapshot_batch_received.is_connected(_on_snapshot_batch_received):
 			session.snapshot_batch_received.connect(_on_snapshot_batch_received)
 		if not session.identity_assigned.is_connected(_on_identity_assigned):
 			session.identity_assigned.connect(_on_identity_assigned)
+		if not session.baseline_received.is_connected(_on_baseline_received):
+			session.baseline_received.connect(_on_baseline_received)
+		if not session.baseline_rejected.is_connected(_on_session_baseline_rejected):
+			session.baseline_rejected.connect(_on_session_baseline_rejected)
 		_set_local_identity()
+	if not session.session_closed.is_connected(_on_session_closed):
+		session.session_closed.connect(_on_session_closed)
 	_configured = true
+	if _host_authority:
+		_combat_active = true
+	elif session.has_baseline():
+		_on_baseline_received(session.get_baseline())
 	return true
 
 func is_host_authority() -> bool:
@@ -81,12 +111,57 @@ func get_authority():
 func get_local_player_id() -> StringName:
 	return _local_player_id
 
+func is_combat_active() -> bool:
+	return _combat_active and not _session_closed
+
+func is_session_closed() -> bool:
+	return _session_closed
+
+func can_submit_command() -> bool:
+	if not _configured or session == null or _session_closed:
+		return false
+	if not session.is_active():
+		return false
+	if _host_authority:
+		return true
+	return _combat_active
+
+func has_baseline() -> bool:
+	if replica == null:
+		return false
+	return replica.has_baseline()
+
+func get_last_baseline() -> Dictionary:
+	if _last_baseline.is_empty():
+		return {}
+	return _last_baseline.duplicate(true)
+
+func get_last_baseline_tick() -> int:
+	return _last_baseline_tick
+
+func get_baseline_received_count() -> int:
+	return _baseline_received_count
+
+func get_baseline_applied_count() -> int:
+	return _baseline_applied_count
+
+func get_baseline_sent_count() -> int:
+	return _baseline_sent_count
+
+func get_last_baseline_sent() -> Dictionary:
+	if _last_baseline_sent.is_empty():
+		return {}
+	return _last_baseline_sent.duplicate(true)
+
+func get_baseline_rejected_count(reason: String) -> int:
+	return int(_baseline_rejections.get(reason, 0))
+
 ## Both host-local and client-local intents use this single entrance. For the
 ## host, NetworkSession immediately validates the envelope into its command
 ## queue; for a client, the same envelope goes to the server. Neither path
 ## bypasses MatchAuthority.
 func submit_command(command: Dictionary) -> int:
-	if not _configured or session == null or not session.is_active() or command.is_empty():
+	if not can_submit_command() or command.is_empty():
 		return -1
 	var sequence := int(session.send_command(command))
 	if sequence > 0:
@@ -175,11 +250,44 @@ func get_physics_frame_count() -> int:
 func get_snapshot_send_count() -> int:
 	return _snapshots_sent
 
+## Client reception path for the reliable full baseline. The replica owns
+## idempotent duplicate/older-baseline rejection; this bridge records transport
+## observations and exposes the applied tick to the session.
+func apply_baseline(baseline: Dictionary) -> Dictionary:
+	var tick := int(baseline.get("baseline_tick", baseline.get("server_tick", -1)))
+	if not _configured or _host_authority or replica == null:
+		return {"applied": false, "reason": "not_client", "tick": tick, "player_count": 0}
+	_baseline_received_count += 1
+	baseline_received.emit(baseline.duplicate(true))
+	if _session_closed or session == null or not session.is_active():
+		return _record_baseline_rejection("not_active", tick)
+	var result: Dictionary = replica.apply_baseline(baseline)
+	if not bool(result.get("applied", false)):
+		return _record_baseline_rejection(String(result.get("reason", "invalid_batch")), tick)
+	_last_baseline = baseline.duplicate(true)
+	_last_baseline_tick = int(result.get("tick", tick))
+	_baseline_applied_count += 1
+	if session.has_method("mark_baseline_applied"):
+		session.mark_baseline_applied(baseline)
+	if not _combat_active:
+		_combat_active = true
+		combat_state_changed.emit(true)
+	_apply_all_replicas()
+	baseline_applied.emit(baseline.duplicate(true))
+	replicas_updated.emit(baseline.duplicate(true))
+	return result
+
 ## Client reception path. Public so a test or fixture can feed the same replica
 ## used by the transport RPC. Returns the SnapshotReplica result dictionary.
 func apply_snapshot_batch(batch: Dictionary) -> Dictionary:
+	var tick := int(batch.get("server_tick", -1))
 	if not _configured or _host_authority or replica == null:
-		return {"applied": false, "reason": "not_client", "tick": -1, "player_count": 0}
+		return {"applied": false, "reason": "not_client", "tick": tick, "player_count": 0}
+	if _session_closed or session == null or not session.is_active():
+		var closed := {"applied": false, "reason": "not_active", "tick": tick, "player_count": 0}
+		_last_rejection = closed.duplicate(true)
+		snapshot_rejected.emit(closed.duplicate(true))
+		return closed
 	var result: Dictionary = replica.apply_batch(batch)
 	if not bool(result.get("applied", false)):
 		_last_rejection = result.duplicate(true)
@@ -191,8 +299,20 @@ func apply_snapshot_batch(batch: Dictionary) -> Dictionary:
 	replicas_updated.emit(batch.duplicate(true))
 	return result
 
+func _record_baseline_rejection(reason: String, tick: int) -> Dictionary:
+	_baseline_rejections[reason] = int(_baseline_rejections.get(reason, 0)) + 1
+	var result := {
+		"applied": false,
+		"reason": reason,
+		"tick": tick,
+		"player_count": 0,
+	}
+	_last_rejection = result.duplicate(true)
+	baseline_rejected.emit(result.duplicate(true))
+	return result
+
 func _physics_process(delta: float) -> void:
-	if not _configured or session == null or not session.is_active():
+	if not _configured or _session_closed or session == null or not session.is_active():
 		return
 	if not _host_authority:
 		return
@@ -206,6 +326,9 @@ func _step_authority(delta: float) -> void:
 		_consume_commands()
 		authority.step()
 		_authority_steps += 1
+		# A late joiner is seeded from exactly this authority tick, after the
+		# step, so the reliable baseline is a complete and atomic state.
+		_flush_pending_baselines()
 		_step_accumulator -= FIXED_STEP
 		_snapshot_accumulator += FIXED_STEP
 		while _snapshot_accumulator + EPSILON >= SNAPSHOT_INTERVAL:
@@ -236,15 +359,39 @@ func _consume_commands() -> void:
 		else:
 			_authority_rejected_commands += 1
 
+func _flush_pending_baselines() -> void:
+	if _pending_baseline_peers.is_empty() or session == null or authority == null:
+		return
+	var baseline := _build_baseline()
+	if baseline.is_empty():
+		return
+	for peer_variant: Variant in _pending_baseline_peers.keys():
+		var peer_id := int(peer_variant)
+		if session.send_baseline(peer_id, baseline) != OK:
+			continue
+		_pending_baseline_peers.erase(peer_id)
+		_baseline_sent_count += 1
+		_last_baseline_sent = baseline.duplicate(true)
+		baseline_sent.emit(peer_id, baseline.duplicate(true))
+
+func _build_baseline() -> Dictionary:
+	if session == null or authority == null:
+		return {}
+	var players: Dictionary = authority.get_snapshots()
+	if players.is_empty():
+		return {}
+	var tick: int = authority.get_tick()
+	return {
+		"match_epoch": session.get_match_epoch(),
+		"baseline_tick": tick,
+		"server_tick": tick,
+		"players": players,
+	}
+
 func _send_snapshot() -> void:
 	if session == null or authority == null:
 		return
-	var players: Dictionary = {}
-	for key: String in _actors.keys():
-		var snapshot: Dictionary = authority.get_snapshot(StringName(key))
-		if snapshot.is_empty():
-			continue
-		players[key] = snapshot
+	var players: Dictionary = authority.get_snapshots()
 	if players.is_empty():
 		return
 	var batch := {
@@ -261,6 +408,33 @@ func _send_snapshot() -> void:
 func _on_snapshot_batch_received(batch: Dictionary) -> void:
 	apply_snapshot_batch(batch)
 
+func _on_baseline_received(baseline: Dictionary) -> void:
+	apply_baseline(baseline)
+
+func _on_session_baseline_rejected(result: Dictionary) -> void:
+	var reason := String(result.get("reason", "invalid_baseline"))
+	var tick := int(result.get("tick", -1))
+	_record_baseline_rejection(reason, tick)
+
+func _on_player_joined(peer_id: int, _player_id: String) -> void:
+	if not _host_authority or peer_id <= 1:
+		return
+	_pending_baseline_peers[peer_id] = true
+
+func _on_player_left(peer_id: int, _player_id: String) -> void:
+	_pending_baseline_peers.erase(peer_id)
+
+func _on_session_closed() -> void:
+	if _session_closed:
+		return
+	_session_closed = true
+	_combat_active = false
+	_pending_baseline_peers.clear()
+	if replica != null:
+		replica.deactivate()
+	session_closed.emit()
+	combat_state_changed.emit(false)
+
 func _on_identity_assigned(_identity: Dictionary) -> void:
 	_set_local_identity()
 
@@ -271,7 +445,7 @@ func _set_local_identity() -> void:
 	if identity.is_empty():
 		return
 	_local_player_id = StringName(String(identity.get("player_id", "")))
-	if not _host_authority and replica != null:
+	if not _host_authority and replica != null and not replica.has_baseline():
 		replica.configure(session.get_match_epoch())
 
 func _apply_all_replicas() -> void:

@@ -1,11 +1,11 @@
 # PAS PvP 实现任务图
 
-状态：Ticket 01、Ticket 02A 与 02B1 已完成；权威移动同步通过 32 组、577 项断言，frontier 为 Ticket 02B2 预测、插值、baseline 与房主断开。
+状态：Ticket 01、Ticket 02A、02B1 与 02B2A 已完成；可靠 baseline 与房主断开通过 33 组、689 项断言，frontier 为 Ticket 02B2B 本地预测、远端插值与权威纠正。
 
 | 编号 | 任务 | Blocked by | 主执行者 | 可独立验证的结果 |
 | --- | --- | --- | --- | --- |
 | 01 | 离线权威移动切片（完成） | 无 | DeepSeek Harness + Codex | 单机玩家通过 MatchAuthority 移动与复活，现有体验不变 |
-| 02 | 两进程建房与移动同步（02B1 已完成） | 01 | DeepSeek Harness + Codex | host 与 client 可加入、移动并收敛到相同状态 |
+| 02 | 两进程建房与移动同步（02B2A 已完成） | 01 | DeepSeek Harness + Codex | host 与 client 可加入、移动并收敛到相同状态 |
 | 03 | 权威霰弹枪命中切片 | 02 | Codex | 两端看到同一组 5 颗弹丸和相同伤害结果 |
 | 04 | 剑、格挡、死亡与物品切片 | 03 | DeepSeek Pro，Codex 审查整合 | 近战、格挡、死亡复活和掉落在两端一致 |
 | 05 | 星星交付与个人撤离切片 | 04 | Codex | 两人可争星、交付、取消、死亡掉落与撤离观战 |
