@@ -28,6 +28,7 @@ func register_player(player_id: StringName, actor: Node, config: Dictionary = {}
 		"dead": actor.get("is_dead") == true,
 		"respawn_remaining": 0.0,
 		"revision": 0,
+		"last_sequence": -1,
 	}
 	if bool(record["dead"]):
 		record["respawn_remaining"] = _respawn_delay(actor)
@@ -46,7 +47,10 @@ func unregister_player(player_id: StringName) -> bool:
 	_emit_event("player_unregistered", record, {})
 	return true
 
-func submit_command(player_id: StringName, command: Dictionary) -> bool:
+## sequence is the NetworkSession envelope sequence when present. It is echoed
+## in snapshots as ack_sequence so a client can drop exactly the confirmed
+## predicted inputs without replaying them again. Gameplay never trusts it.
+func submit_command(player_id: StringName, command: Dictionary, sequence: int = -1) -> bool:
 	if not _players.has(player_id) or command.is_empty():
 		return false
 	var record: Dictionary = _players[player_id]
@@ -54,12 +58,14 @@ func submit_command(player_id: StringName, command: Dictionary) -> bool:
 	match command_type:
 		&"move":
 			record["move_input"] = _requested_direction(command, record["move_input"])
+			_acknowledge(record, sequence)
 			return true
 		&"jump":
 			if not _accepts_actions(record):
 				return false
 			var actions: Array = record["actions"]
 			actions.append({"type": &"jump"})
+			_acknowledge(record, sequence)
 			return true
 		&"dash":
 			if not _accepts_actions(record):
@@ -69,9 +75,14 @@ func submit_command(player_id: StringName, command: Dictionary) -> bool:
 				"type": &"dash",
 				"direction": _requested_direction(command, Vector2.ZERO),
 			})
+			_acknowledge(record, sequence)
 			return true
 		_:
 			return false
+
+func _acknowledge(record: Dictionary, sequence: int) -> void:
+	if sequence > int(record.get("last_sequence", -1)):
+		record["last_sequence"] = sequence
 
 func step() -> void:
 	_tick += 1
@@ -120,6 +131,7 @@ func get_snapshot(player_id: StringName) -> Dictionary:
 		"health": _actor_health(actor, "real_hp"),
 		"max_health": _actor_health(actor, "max_hp"),
 		"respawn_remaining": float(record["respawn_remaining"]),
+		"ack_sequence": int(record.get("last_sequence", -1)),
 	}
 
 func drain_events() -> Array[Dictionary]:

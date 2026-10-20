@@ -13,6 +13,11 @@ const BRIDGE_PATH := "res://scene/script/network/match_network_bridge.gd"
 const CONTROL_PATH := "res://tests/fixtures/network_match_control.gd"
 const ACTOR_SCENE := "res://tests/fixtures/network_match_actor.tscn"
 const REMOTE_SPAWN := Vector2(180.0, 150.0)
+const MOTION_REMOTE_SPAWN := Vector2(620.0, 150.0)
+const MOTION_STOP_MS := 700
+const MOTION_INJECT_MS := 1200
+const INJECTED_ERROR := Vector2(20.0, 0.0)
+const LOCAL_CONVERGENCE_TOLERANCE := 0.5
 
 var _session
 var _bridge
@@ -39,6 +44,29 @@ var _final_states: Dictionary = {}
 var _last_batch: Dictionary = {}
 var _stale_result: Dictionary = {}
 var _regressed_result: Dictionary = {}
+var _motion_mode := false
+var _probe_attempts := 0
+var _prediction_observable := false
+var _probe_data: Dictionary = {}
+var _observable_probe: Dictionary = {}
+var _injection_done := false
+var _injection_accepted := false
+var _injection_ms := -1
+var _post_injection_error := -1.0
+var _converged_error := -1.0
+var _convergence_ms := -1
+var _has_remote_render := false
+var _last_remote_render := Vector2.ZERO
+var _has_remote_authority := false
+var _last_remote_authority := Vector2.ZERO
+var _remote_max_render_step := 0.0
+var _max_snapshot_step := 0.0
+var _remote_off_authority_frames := 0
+var _remote_min_samples := 999
+var _local_final_render := Vector2.ZERO
+var _local_final_error := -1.0
+var _remote_final_render := Vector2.ZERO
+var _remote_final_error := -1.0
 var _error := ""
 
 func _initialize() -> void:
@@ -51,6 +79,7 @@ func _run() -> void:
 	var port := int(args.get("port", "0"))
 	var epoch := int(args.get("epoch", "424242"))
 	var max_wait := float(args.get("max-wait", "18"))
+	_motion_mode = String(args.get("motion", "0")) == "1"
 	_deadline_ms = Time.get_ticks_msec() + int(max_wait * 1000.0)
 	_log("starting match client fixture (port=%d max-wait=%.1fs)" % [port, max_wait])
 	if _out_path.is_empty() or port <= 0:
@@ -101,7 +130,7 @@ func _run() -> void:
 		_finish(1)
 		return
 	_local_actor = actor_scene.instantiate()
-	_local_actor.global_position = REMOTE_SPAWN
+	_local_actor.global_position = MOTION_REMOTE_SPAWN if _motion_mode else REMOTE_SPAWN
 	_local_actor.name = "LocalReplica"
 	root.add_child(_local_actor)
 	await process_frame
@@ -127,8 +156,12 @@ func _run_scenario() -> void:
 			_scenario_start_ms = now
 			_next_move_ms = now
 			_log("scenario started after first authoritative snapshot")
+		if _motion_mode and _scenario_start_ms >= 0 and not _prediction_observable and _probe_attempts < 4:
+			_probe_local_prediction()
 		if _scenario_start_ms >= 0:
 			_tick_scenario(now)
+			_track_motion_stats()
+			_track_motion_error(now)
 			if applied >= 2 and not _injected_rejections:
 				_inject_rejections()
 		if _target_tick > 0 and not _final_captured and int(_bridge.get_last_snapshot_tick()) >= _target_tick:
@@ -145,6 +178,9 @@ func _run_scenario() -> void:
 
 func _tick_scenario(now: int) -> void:
 	var elapsed := now - _scenario_start_ms
+	if _motion_mode:
+		_tick_motion_scenario(now, elapsed)
+		return
 	if elapsed <= 700:
 		if now >= _next_move_ms:
 			_send_command({"type": "move", "direction": Vector2.LEFT})
@@ -191,6 +227,119 @@ func _inject_rejections() -> void:
 		String(_regressed_result.get("reason", "")),
 	])
 
+## Presentation scenario: local movement (predicted), a deliberate small
+## prediction error, and a stable authority tail so both local and remote
+## presentation can be compared with the host's final authoritative state.
+func _tick_motion_scenario(now: int, elapsed: int) -> void:
+	if elapsed <= MOTION_STOP_MS:
+		if now >= _next_move_ms:
+			_send_command({"type": "move", "direction": Vector2.LEFT})
+			_next_move_ms = now + 50
+	elif not _stop_sent:
+		_stop_sent = true
+		_send_command({"type": "move", "direction": Vector2.ZERO})
+	if elapsed >= MOTION_INJECT_MS and not _injection_done:
+		_injection_done = true
+		_injection_ms = now
+		var local_id := _local_player_id()
+		var auth := _replica_position(local_id)
+		var before: Vector2 = _bridge.get_render_position(StringName(local_id))
+		_injection_accepted = bool(_bridge.inject_prediction_error(INJECTED_ERROR))
+		var after: Vector2 = _bridge.get_render_position(StringName(local_id))
+		_post_injection_error = after.distance_to(auth)
+		_log("injected prediction error accepted=%s before=%.2f after=%.2f auth=%s render=%s" % [
+			_injection_accepted,
+			before.distance_to(auth),
+			_post_injection_error,
+			str(auth),
+			str(after),
+		])
+
+func _probe_local_prediction() -> void:
+	_probe_attempts += 1
+	var local_id := _local_player_id()
+	if local_id.is_empty():
+		return
+	var before_applied := int(_bridge.get_applied_snapshot_count())
+	var before_tick := int(_bridge.get_last_snapshot_tick())
+	var before_render: Vector2 = _bridge.get_render_position(StringName(local_id))
+	var before_auth := _replica_position(local_id)
+	var sequence := _send_command({"type": "move", "direction": Vector2.LEFT})
+	var after_render: Vector2 = _bridge.get_render_position(StringName(local_id))
+	var after_applied := int(_bridge.get_applied_snapshot_count())
+	var after_tick := int(_bridge.get_last_snapshot_tick())
+	var pending := int(_bridge.get_pending_input_count())
+	var moved: float = before_render.distance_to(after_render)
+	var probe := {
+		"sequence": sequence,
+		"moved": moved,
+		"before_render": _vector_json(before_render),
+		"after_render": _vector_json(after_render),
+		"before_authoritative": _vector_json(before_auth),
+		"before_applied_snapshots": before_applied,
+		"after_applied_snapshots": after_applied,
+		"before_snapshot_tick": before_tick,
+		"after_snapshot_tick": after_tick,
+		"pending_inputs": pending,
+	}
+	_probe_data = probe
+	if sequence > 0 and moved > 0.5 and after_applied == before_applied \
+			and after_tick == before_tick and pending >= 1:
+		_prediction_observable = true
+		_observable_probe = probe.duplicate(true)
+		_log("prediction observable before any newer snapshot: moved=%.3f pending=%d tick=%d" % [moved, pending, before_tick])
+
+func _track_motion_stats() -> void:
+	if not _motion_mode or _scenario_start_ms < 0:
+		return
+	var remote_id := _other_player_id()
+	if remote_id.is_empty():
+		return
+	var sample_count := int(_bridge.get_remote_sample_count(StringName(remote_id)))
+	if sample_count > 0:
+		_remote_min_samples = mini(_remote_min_samples, sample_count)
+	if sample_count <= 0:
+		return
+	var render: Vector2 = _bridge.get_render_position(StringName(remote_id))
+	var authority_state: Dictionary = _bridge.get_replica_state(StringName(remote_id))
+	if authority_state.is_empty():
+		return
+	var authority_position := _state_position(authority_state)
+	if _has_remote_authority and not authority_position.is_equal_approx(_last_remote_authority):
+		_max_snapshot_step = maxf(_max_snapshot_step, authority_position.distance_to(_last_remote_authority))
+	_last_remote_authority = authority_position
+	_has_remote_authority = true
+	if render.distance_to(authority_position) > 0.1:
+		_remote_off_authority_frames += 1
+	if _has_remote_render:
+		_remote_max_render_step = maxf(_remote_max_render_step, render.distance_to(_last_remote_render))
+	_last_remote_render = render
+	_has_remote_render = true
+
+func _track_motion_error(now: int) -> void:
+	if not _motion_mode or not _injection_done:
+		return
+	var local_id := _local_player_id()
+	var authoritative := _replica_position(local_id)
+	var render: Vector2 = _bridge.get_render_position(StringName(local_id))
+	var error: float = render.distance_to(authoritative)
+	if _post_injection_error < 0.0:
+		_post_injection_error = error
+	if _converged_error < 0.0 and error <= LOCAL_CONVERGENCE_TOLERANCE:
+		_converged_error = error
+		_convergence_ms = now - _injection_ms
+		_log("prediction error converged in %d ms (error=%.3f)" % [_convergence_ms, _converged_error])
+
+func _local_player_id() -> String:
+	return String(_initial_identity.get("player_id", ""))
+
+func _replica_position(player_id: String) -> Vector2:
+	return _state_position(_bridge.get_replica_state(StringName(player_id)))
+
+func _state_position(state: Dictionary) -> Vector2:
+	var value: Variant = state.get("position", Vector2.ZERO)
+	return value if value is Vector2 else Vector2.ZERO
+
 func _other_player_id() -> String:
 	var states: Dictionary = _bridge.get_replica_states()
 	for player_id: Variant in states.keys():
@@ -203,6 +352,19 @@ func _capture_final() -> void:
 	_final_captured = true
 	_final_states = _states_json(_bridge.get_replica_states())
 	_last_batch = _batch_json(_bridge.get_last_applied_batch())
+	if _motion_mode:
+		var local_id := _local_player_id()
+		var local_authoritative := _replica_position(local_id)
+		_local_final_render = _bridge.get_render_position(StringName(local_id))
+		_local_final_error = _local_final_render.distance_to(local_authoritative)
+		var remote_id := _other_player_id()
+		if not remote_id.is_empty():
+			var remote_authoritative := _replica_position(remote_id)
+			_remote_final_render = _bridge.get_render_position(StringName(remote_id))
+			_remote_final_error = _remote_final_render.distance_to(remote_authoritative)
+		if _converged_error < 0.0 and _local_final_error <= LOCAL_CONVERGENCE_TOLERANCE:
+			_converged_error = _local_final_error
+		_log("final presentation: local_error=%.3f remote_error=%.3f" % [_local_final_error, _remote_final_error])
 	_log("captured final replica at tick %d with %d players" % [_bridge.get_last_snapshot_tick(), _final_states.size()])
 
 func _on_target_tick_announced(tick: int) -> void:
@@ -255,6 +417,30 @@ func _finish(code: int) -> void:
 		"final_captured": _final_captured,
 		"client_done_sent": _client_done_sent,
 		"finish_acknowledged": _finish_acknowledged,
+		"motion_mode": _motion_mode,
+		"prediction_observable": _prediction_observable,
+		"prediction_attempts": _probe_attempts,
+		"prediction_probe": _observable_probe if not _observable_probe.is_empty() else _probe_data,
+		"pending_inputs_at_finish": _bridge.get_pending_input_count() if _bridge != null else 0,
+		"client_prediction": _bridge.get_client_prediction() if _bridge != null else {},
+		"client_has_authority": _bridge.get_authority() != null if _bridge != null else false,
+		"client_is_host_authority": _bridge.is_host_authority() if _bridge != null else true,
+		"injection_done": _injection_done,
+		"injection_accepted": _injection_accepted,
+		"post_injection_error": _post_injection_error,
+		"converged_error": _converged_error,
+		"convergence_ms": _convergence_ms,
+		"remote_min_samples": _remote_min_samples,
+		"remote_interpolated_frames": _bridge.get_remote_interpolated_frame_count(StringName(_other_player_id())) if _bridge != null else 0,
+		"remote_snap_events": _bridge.get_remote_snap_event_count(StringName(_other_player_id())) if _bridge != null else 0,
+		"remote_fallback_reason": _bridge.get_remote_fallback_reason(StringName(_other_player_id())) if _bridge != null else "",
+		"remote_max_render_step": _remote_max_render_step,
+		"max_snapshot_step": _max_snapshot_step,
+		"remote_off_authority_frames": _remote_off_authority_frames,
+		"local_final_render": _vector_json(_local_final_render),
+		"local_final_error": _local_final_error,
+		"remote_final_render": _vector_json(_remote_final_render),
+		"remote_final_error": _remote_final_error,
 		"pid": OS.get_process_id(),
 	}
 	_log("finishing: ok=%s error=%s snapshots=%d" % [code == 0 and _error.is_empty(), _error, applied])
@@ -276,8 +462,11 @@ func _state_json(state: Dictionary) -> Dictionary:
 	for key in ["position", "velocity"]:
 		var value: Variant = result.get(key)
 		if value is Vector2:
-			result[key] = {"x": value.x, "y": value.y}
+			result[key] = _vector_json(value)
 	return result
+
+func _vector_json(value: Vector2) -> Dictionary:
+	return {"x": value.x, "y": value.y}
 
 func _batch_json(batch: Dictionary) -> Dictionary:
 	if batch.is_empty():

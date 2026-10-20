@@ -39,6 +39,12 @@ var _states_at_close: Dictionary = {}
 var _replica_states_stable := false
 var _submit_after_close := 0
 var _post_close_result: Dictionary = {}
+var _presentation_error_before_close := -1.0
+var _presentation_render_states_after_close := -1
+var _presentation_pending_after_close := -1
+var _presentation_ready_after_close := true
+var _presentation_fallback_after_close := ""
+var _actor_authority_error_after_close := -1.0
 var _error := ""
 
 func _initialize() -> void:
@@ -145,6 +151,14 @@ func _run() -> void:
 		_finish(1)
 		return
 
+	# Deliberately leave a stale predicted presentation offset before the host
+	# closes, so the post-close assertions prove it is discarded and the actor
+	# falls back to the last authoritative replica instead of freezing.
+	var authoritative_before_close := _replica_position(_local_id)
+	var injection_accepted: bool = _bridge.inject_prediction_error(Vector2(20.0, 0.0))
+	_presentation_error_before_close = _bridge.get_render_position(StringName(_local_id)).distance_to(authoritative_before_close)
+	_log("presentation probe before close: injected=%s error=%.2f" % [injection_accepted, _presentation_error_before_close])
+
 	if not await _wait_for_close():
 		if _error.is_empty():
 			_error = "client did not observe the host close in bounded time"
@@ -218,6 +232,11 @@ func _capture_post_close_state() -> void:
 	var elapsed := _close_observed_ms - _progress_sent_ms if _progress_sent_ms > 0 else -1
 	_replica_tick_at_close = int(_bridge.get_last_snapshot_tick())
 	_states_at_close = _states_json(_bridge.get_replica_states())
+	_presentation_render_states_after_close = _bridge.get_render_states().size()
+	_presentation_pending_after_close = _bridge.get_pending_input_count()
+	_presentation_ready_after_close = bool(_bridge.get_client_prediction().get("ready", true))
+	_presentation_fallback_after_close = String(_bridge.get_client_prediction().get("last_fallback_reason", ""))
+	_actor_authority_error_after_close = _local_actor.global_position.distance_to(_replica_position(_local_id))
 	_submit_after_close = _bridge.submit_command({"type": "move", "direction": Vector2.RIGHT})
 	var future_tick := maxi(_replica_tick_at_close, _baseline_tick) + 100
 	_post_close_result = _bridge.apply_snapshot_batch({
@@ -289,6 +308,12 @@ func _finish(code: int) -> void:
 		"replica_states_stable": _replica_states_stable,
 		"submit_after_close_sequence": _submit_after_close,
 		"post_close_snapshot_reason": String(_post_close_result.get("reason", "")),
+		"presentation_error_before_close": _presentation_error_before_close,
+		"presentation_render_states_after_close": _presentation_render_states_after_close,
+		"presentation_pending_after_close": _presentation_pending_after_close,
+		"presentation_ready_after_close": _presentation_ready_after_close,
+		"presentation_fallback_after_close": _presentation_fallback_after_close,
+		"actor_authority_error_after_close": _actor_authority_error_after_close,
 		"last_rejection": _bridge.get_last_rejection() if _bridge != null else {},
 		"pid": OS.get_process_id(),
 	}
@@ -308,6 +333,13 @@ func _states_json(states: Dictionary) -> Dictionary:
 	for player_id: Variant in states:
 		result[String(player_id)] = _state_json(states[player_id])
 	return result
+
+func _replica_position(player_id: String) -> Vector2:
+	if _bridge == null or player_id.is_empty():
+		return Vector2.ZERO
+	var state: Dictionary = _bridge.get_replica_state(StringName(player_id))
+	var value: Variant = state.get("position", Vector2.ZERO)
+	return value if value is Vector2 else Vector2.ZERO
 
 func _state_json(state: Dictionary) -> Dictionary:
 	if state.is_empty():

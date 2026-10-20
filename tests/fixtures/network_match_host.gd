@@ -15,8 +15,10 @@ const CONTROL_PATH := "res://tests/fixtures/network_match_control.gd"
 const ACTOR_SCENE := "res://tests/fixtures/network_match_actor.tscn"
 const HOST_SPAWN := Vector2(0.0, 150.0)
 const REMOTE_SPAWN := Vector2(180.0, 150.0)
+const MOTION_REMOTE_SPAWN := Vector2(620.0, 150.0)
 const FLOOR_SIZE := Vector2(4000.0, 40.0)
 const FLOOR_CENTER := Vector2(0.0, 200.0)
+const MOTION_TARGET_MS := 3000
 
 var _session
 var _authority
@@ -44,6 +46,7 @@ var _host_commands_sent := 0
 var _forged_claims: Array = []
 var _host_spawn := HOST_SPAWN
 var _remote_spawn := REMOTE_SPAWN
+var _motion_mode := false
 var _error := ""
 var _exit_code := 0
 
@@ -58,6 +61,9 @@ func _run() -> void:
 	var port := int(args.get("port", "0"))
 	var epoch := int(args.get("epoch", "424242"))
 	var max_wait := float(args.get("max-wait", "18"))
+	_motion_mode = String(args.get("motion", "0")) == "1"
+	if _motion_mode:
+		_remote_spawn = MOTION_REMOTE_SPAWN
 	_deadline_ms = Time.get_ticks_msec() + int(max_wait * 1000.0)
 	_log("starting match host fixture (max-wait=%.1fs)" % max_wait)
 	if _out_path.is_empty() or _ready_path.is_empty():
@@ -192,6 +198,9 @@ func _run_session() -> void:
 
 func _tick_scenario(now: int) -> void:
 	var elapsed := now - _scenario_start_ms
+	if _motion_mode:
+		_tick_motion_scenario(elapsed)
+		return
 	if elapsed <= 900:
 		if now >= _next_move_ms:
 			_send_host_command({"type": "move", "direction": Vector2.RIGHT})
@@ -214,6 +223,24 @@ func _tick_scenario(now: int) -> void:
 		var target_error: int = _control.announce_target_tick(_client_peer_id, _target_tick)
 		_target_sent = target_error == OK
 		_log("target tick %d announced to peer %d: %s" % [_target_tick, _client_peer_id, "ok" if _target_sent else "error %d" % target_error])
+
+## Presentation scenario: the host holds still after a short authoritative move
+## so the client can prove prediction, interpolation and error convergence on a
+## stable final authority state. No fixture actor is killed in this mode.
+func _tick_motion_scenario(elapsed: int) -> void:
+	var now := Time.get_ticks_msec()
+	if elapsed <= 500:
+		if now >= _next_move_ms:
+			_send_host_command({"type": "move", "direction": Vector2.RIGHT})
+			_next_move_ms = now + 40
+	elif not _stop_sent:
+		_stop_sent = true
+		_send_host_command({"type": "move", "direction": Vector2.ZERO})
+	if elapsed >= MOTION_TARGET_MS and not _target_sent:
+		_target_tick = _authority.get_tick()
+		var target_error: int = _control.announce_target_tick(_client_peer_id, _target_tick)
+		_target_sent = target_error == OK
+		_log("motion target tick %d announced to peer %d: %s" % [_target_tick, _client_peer_id, "ok" if _target_sent else "error %d" % target_error])
 
 func _send_host_command(command: Dictionary) -> void:
 	var sequence: int = _bridge.submit_command(command)
@@ -286,7 +313,10 @@ func _write_result(ok: bool) -> void:
 		"remote_initial_position": _vector_json(_remote_spawn),
 		"host_final": _state_json(host_final),
 		"remote_final": _state_json(remote_final),
+		"host_final_ack_sequence": int(host_final.get("ack_sequence", -1)),
+		"remote_final_ack_sequence": int(remote_final.get("ack_sequence", -1)),
 		"last_batch": _batch_json(last_batch),
+		"motion_mode": _motion_mode,
 		"target_tick": _target_tick,
 		"target_sent": _target_sent,
 		"client_done": _client_done,

@@ -6,7 +6,8 @@ extends Node
 ## records, submits them to the authority, steps at 60 Hz and broadcasts
 ## snapshot batches at 20 Hz. On a client it submits local intents through the
 ## same session envelope path and applies authoritative batches to an
-## observable replica. It never predicts, interpolates or decides gameplay.
+## observable replica. Visual-only prediction and interpolation live in
+## ClientMotionView; gameplay state is never predicted or decided here.
 
 signal replicas_updated(batch: Dictionary)
 signal snapshot_rejected(result: Dictionary)
@@ -19,6 +20,7 @@ signal combat_state_changed(active: bool)
 
 const MatchAuthorityScript = preload("res://scene/script/network/match_authority.gd")
 const SnapshotReplicaScript = preload("res://scene/script/network/snapshot_replica.gd")
+const ClientMotionViewScript = preload("res://scene/script/network/client_motion_view.gd")
 
 const AUTHORITY_HZ: int = 60
 const SNAPSHOT_HZ: int = 20
@@ -30,6 +32,7 @@ const EPSILON: float = 0.000001
 var session
 var authority
 var replica
+var client_view
 
 var _configured: bool = false
 var _host_authority: bool = false
@@ -92,6 +95,8 @@ func configure(session_node: Node, authority_instance = null) -> bool:
 			session.baseline_received.connect(_on_baseline_received)
 		if not session.baseline_rejected.is_connected(_on_session_baseline_rejected):
 			session.baseline_rejected.connect(_on_session_baseline_rejected)
+		client_view = ClientMotionViewScript.new()
+		client_view.configure(session.get_match_epoch())
 		_set_local_identity()
 	if not session.session_closed.is_connected(_on_session_closed):
 		session.session_closed.connect(_on_session_closed)
@@ -166,6 +171,8 @@ func submit_command(command: Dictionary) -> int:
 	var sequence := int(session.send_command(command))
 	if sequence > 0:
 		_submitted_commands += 1
+		if not _host_authority and client_view != null:
+			client_view.record_local_input(sequence, command)
 	return sequence
 
 func submit_move(direction: Vector2) -> int:
@@ -191,6 +198,9 @@ func bind_actor(player_id: StringName, actor: Node, local: bool = false) -> bool
 	_actors[key] = actor
 	if local:
 		_local_player_id = player_id
+		if not _host_authority and client_view != null:
+			client_view.set_local_player(player_id)
+			_configure_prediction_speed(actor)
 	if not _host_authority:
 		_apply_replica_state(key)
 	return true
@@ -214,6 +224,65 @@ func get_rejected_snapshot_count(reason: String) -> int:
 	if replica == null:
 		return 0
 	return replica.get_rejected_count(reason)
+
+## Client presentation diagnostics. These read the visual prediction /
+## interpolation layer only; the authoritative replica remains untouched.
+func get_client_prediction() -> Dictionary:
+	if _host_authority or client_view == null:
+		return {}
+	return client_view.get_local_prediction()
+
+func get_render_state(player_id: StringName) -> Dictionary:
+	if _host_authority or client_view == null:
+		return {}
+	return client_view.get_render_state(player_id)
+
+func get_render_states() -> Dictionary:
+	if _host_authority or client_view == null:
+		return {}
+	return client_view.get_render_states()
+
+func get_render_position(player_id: StringName) -> Vector2:
+	if _host_authority or client_view == null:
+		return Vector2.ZERO
+	return client_view.get_render_position(player_id)
+
+func get_pending_input_count() -> int:
+	if _host_authority or client_view == null:
+		return 0
+	return client_view.get_pending_input_count()
+
+func get_remote_sample_count(player_id: StringName) -> int:
+	if _host_authority or client_view == null:
+		return 0
+	return client_view.get_remote_sample_count(player_id)
+
+func get_remote_interpolated_frame_count(player_id: StringName) -> int:
+	if _host_authority or client_view == null:
+		return 0
+	return client_view.get_remote_interpolated_frame_count(player_id)
+
+func get_remote_snap_event_count(player_id: StringName) -> int:
+	if _host_authority or client_view == null:
+		return 0
+	return client_view.get_remote_snap_event_count(player_id)
+
+func get_remote_fallback_reason(player_id: StringName) -> String:
+	if _host_authority or client_view == null:
+		return ""
+	return client_view.get_remote_fallback_reason(player_id)
+
+func get_remote_render_tick() -> float:
+	if _host_authority or client_view == null:
+		return 0.0
+	return client_view.get_remote_render_tick()
+
+## Presentation-only test/probe seam. It shifts the local predicted render
+## position and never forwards anything to NetworkSession or MatchAuthority.
+func inject_prediction_error(offset: Vector2) -> bool:
+	if _host_authority or client_view == null or _session_closed:
+		return false
+	return client_view.inject_prediction_error(offset)
 
 func get_last_snapshot_tick() -> int:
 	if _host_authority:
@@ -269,6 +338,8 @@ func apply_baseline(baseline: Dictionary) -> Dictionary:
 	_baseline_applied_count += 1
 	if session.has_method("mark_baseline_applied"):
 		session.mark_baseline_applied(baseline)
+	if client_view != null:
+		client_view.apply_baseline(baseline)
 	if not _combat_active:
 		_combat_active = true
 		combat_state_changed.emit(true)
@@ -295,6 +366,8 @@ func apply_snapshot_batch(batch: Dictionary) -> Dictionary:
 		return result
 	_last_applied_batch = batch.duplicate(true)
 	_last_applied_tick = int(result.get("tick", -1))
+	if client_view != null:
+		client_view.apply_snapshot(batch)
 	_apply_all_replicas()
 	replicas_updated.emit(batch.duplicate(true))
 	return result
@@ -315,6 +388,9 @@ func _physics_process(delta: float) -> void:
 	if not _configured or _session_closed or session == null or not session.is_active():
 		return
 	if not _host_authority:
+		if client_view != null:
+			client_view.tick(delta)
+			_apply_all_replicas()
 		return
 	_physics_frames += 1
 	_step_authority(delta)
@@ -354,7 +430,7 @@ func _consume_commands() -> void:
 			_authority_rejected_commands += 1
 			continue
 		_consumed_commands += 1
-		if authority.submit_command(player_id, command):
+		if authority.submit_command(player_id, command, int(record.get("sequence", -1))):
 			_command_counts[key] = int(_command_counts.get(key, 0)) + 1
 		else:
 			_authority_rejected_commands += 1
@@ -432,6 +508,11 @@ func _on_session_closed() -> void:
 	_pending_baseline_peers.clear()
 	if replica != null:
 		replica.deactivate()
+	if client_view != null:
+		client_view.deactivate("session_closed")
+	# Fall back to the last authoritative replica for presentation once the
+	# presentation buffers are gone, instead of leaving a frozen predicted pose.
+	_apply_all_replicas()
 	session_closed.emit()
 	combat_state_changed.emit(false)
 
@@ -447,11 +528,31 @@ func _set_local_identity() -> void:
 	_local_player_id = StringName(String(identity.get("player_id", "")))
 	if not _host_authority and replica != null and not replica.has_baseline():
 		replica.configure(session.get_match_epoch())
+	if not _host_authority and client_view != null and _local_player_id != &"":
+		client_view.set_local_player(_local_player_id)
+
+## The predicted step must use the same CharacterMotor speed as the real actor.
+## The motor's exported speed remains the single authority for movement.
+func _configure_prediction_speed(actor: Node) -> void:
+	if client_view == null or not actor.has_method("get_motor"):
+		return
+	var motor: Variant = actor.get_motor()
+	if not is_instance_valid(motor):
+		return
+	var speed: Variant = motor.get("speed")
+	if speed is float or speed is int:
+		client_view.set_movement_speed(float(speed))
 
 func _apply_all_replicas() -> void:
 	if replica == null:
 		return
-	var states: Dictionary = replica.get_states()
+	var states: Dictionary
+	if not _host_authority and client_view != null:
+		states = client_view.get_render_states()
+		if states.is_empty():
+			states = replica.get_states()
+	else:
+		states = replica.get_states()
 	for key: String in _actors.keys():
 		_apply_state_to_actor(_actors[key], states.get(key, {}))
 
@@ -461,7 +562,12 @@ func _apply_replica_state(player_id: String) -> void:
 	var actor: Variant = _actors.get(player_id)
 	if not is_instance_valid(actor):
 		return
-	_apply_state_to_actor(actor, replica.get_state(StringName(player_id)))
+	var state: Dictionary
+	if not _host_authority and client_view != null:
+		state = client_view.get_render_state(StringName(player_id))
+	else:
+		state = replica.get_state(StringName(player_id))
+	_apply_state_to_actor(actor, state)
 
 func _apply_state_to_actor(actor: Node, state: Dictionary) -> void:
 	if state.is_empty() or not is_instance_valid(actor):

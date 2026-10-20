@@ -339,6 +339,12 @@ func _collect_results(port: int) -> void:
 	check(String(client_result.get("post_close_snapshot_reason", "")) == "not_active", "A snapshot after host exit is refused")
 	check(bool(client_result.get("replica_states_stable", false)), "Replica state stops changing after host exit")
 	check(int(client_result.get("replica_tick_at_close", -1)) == int(client_result.get("replica_tick_after_wait", -2)), "Replica tick is frozen after host exit")
+	check(float(client_result.get("presentation_error_before_close", 0.0)) >= 15.0, "A stale predicted presentation offset existed before the host exit")
+	check(int(client_result.get("presentation_render_states_after_close", -1)) == 0, "Host exit drops every client presentation render state")
+	check(int(client_result.get("presentation_pending_after_close", -1)) == 0, "Host exit drops pending predicted inputs")
+	check(not bool(client_result.get("presentation_ready_after_close", true)), "Host exit marks the client prediction layer unready")
+	check(String(client_result.get("presentation_fallback_after_close", "")) == "session_closed", "Host exit exposes the presentation cleanup reason")
+	check(float(client_result.get("actor_authority_error_after_close", 99.0)) <= 0.5, "Host exit falls the local actor back to the last authoritative position")
 
 	var host_log := _read_text(_path(HOST_LOG))
 	var client_log := _read_text(_path(CLIENT_LOG))
