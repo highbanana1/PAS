@@ -14,6 +14,7 @@ signal player_joined(peer_id: int, player_id: String)
 signal player_left(peer_id: int, player_id: String)
 signal command_result(result: Dictionary)
 signal snapshot_batch_received(batch: Dictionary)
+signal combat_state_received(packet: Dictionary)
 signal baseline_received(baseline: Dictionary)
 signal baseline_applied(baseline: Dictionary)
 signal baseline_rejected(result: Dictionary)
@@ -325,7 +326,10 @@ func mark_baseline_applied(baseline: Dictionary) -> bool:
 	baseline_applied.emit(baseline.duplicate(true))
 	return true
 
-@rpc("any_peer", "call_remote", "unreliable_ordered", COMMAND_CHANNEL)
+# Fire and movement share sequence numbering, so use one reliable ordered stream.
+# A later movement packet must never overtake and invalidate an earlier fire.
+# Tradeoff: packet loss delays movement; split sequence domains in a later ticket.
+@rpc("any_peer", "call_remote", "reliable", COMMAND_CHANNEL)
 func _rpc_submit_envelope(envelope: Dictionary) -> void:
 	if not _is_host or not _is_active:
 		return
@@ -618,3 +622,19 @@ func _reset_state() -> void:
 func _exit_tree() -> void:
 	if _is_active:
 		stop()
+
+func broadcast_combat_state(packet: Dictionary) -> int:
+	if not _is_host or not is_active():
+		return ERR_UNCONFIGURED
+	if int(packet.get("match_epoch", -1)) != _match_epoch:
+		return ERR_INVALID_PARAMETER
+	_rpc_combat_state.rpc(packet)
+	return OK
+
+@rpc("authority", "call_remote", "reliable", BASELINE_CHANNEL)
+func _rpc_combat_state(packet: Dictionary) -> void:
+	if _is_host or not is_active() or multiplayer.get_remote_sender_id() != SERVER_PEER_ID:
+		return
+	if int(packet.get("match_epoch", -1)) != _match_epoch:
+		return
+	combat_state_received.emit(packet.duplicate(true))

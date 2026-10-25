@@ -7,6 +7,8 @@ extends RefCounted
 
 const FIXED_STEP: float = 1.0 / 60.0
 
+var _shotgun = preload("res://scene/script/network/shotgun_authority.gd").new()
+
 var _players: Dictionary = {}
 var _events: Array[Dictionary] = []
 var _tick: int = 0
@@ -56,6 +58,13 @@ func submit_command(player_id: StringName, command: Dictionary, sequence: int = 
 	var record: Dictionary = _players[player_id]
 	var command_type := StringName(command.get("type", ""))
 	match command_type:
+		&"fire":
+			if not _accepts_actions(record):
+				return false
+			var accepted: bool = _shotgun.request_fire(player_id, record["actor"], command.get("direction"), _tick)
+			if accepted:
+				_acknowledge(record, sequence)
+			return accepted
 		&"move":
 			record["move_input"] = _requested_direction(command, record["move_input"])
 			_acknowledge(record, sequence)
@@ -88,6 +97,7 @@ func step() -> void:
 	_tick += 1
 	for player_id: StringName in _players.keys():
 		_step_player(_players[player_id])
+	_shotgun.step(_tick, _players)
 
 func get_tick() -> int:
 	return _tick
@@ -250,3 +260,6 @@ func _emit_event(event_type: String, record: Dictionary, extra: Dictionary = {})
 	}
 	event.merge(extra, true)
 	_events.append(event)
+
+func get_combat_state() -> Dictionary:
+	return _shotgun.get_state()

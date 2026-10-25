@@ -21,6 +21,7 @@ signal combat_state_changed(active: bool)
 const MatchAuthorityScript = preload("res://scene/script/network/match_authority.gd")
 const SnapshotReplicaScript = preload("res://scene/script/network/snapshot_replica.gd")
 const ClientMotionViewScript = preload("res://scene/script/network/client_motion_view.gd")
+const NetworkPelletViewScript = preload("res://scene/script/network/pellet_view.gd")
 
 const AUTHORITY_HZ: int = 60
 const SNAPSHOT_HZ: int = 20
@@ -29,10 +30,16 @@ const SNAPSHOT_INTERVAL: float = 1.0 / 20.0
 const MAX_CATCHUP_STEPS: int = 8
 const EPSILON: float = 0.000001
 
+var combat_replica = preload("res://scene/script/network/combat_replica.gd").new()
+var _sent_combat_revision: int = 0
+var _pending_combat_packet: Dictionary = {}
+signal combat_updated(state: Dictionary)
+
 var session
 var authority
 var replica
 var client_view
+var pellet_view
 
 var _configured: bool = false
 var _host_authority: bool = false
@@ -71,6 +78,9 @@ func configure(session_node: Node, authority_instance = null) -> bool:
 	if not session_node.is_active():
 		return false
 	session = session_node
+	combat_replica.configure(session.get_match_epoch())
+	if session.has_signal("combat_state_received"):
+		session.combat_state_received.connect(_on_combat_packet)
 	_host_authority = bool(session.is_host())
 	replica = SnapshotReplicaScript.new()
 	if _host_authority:
@@ -101,6 +111,10 @@ func configure(session_node: Node, authority_instance = null) -> bool:
 	if not session.session_closed.is_connected(_on_session_closed):
 		session.session_closed.connect(_on_session_closed)
 	_configured = true
+	pellet_view = NetworkPelletViewScript.new()
+	pellet_view.name = "NetworkPelletView"
+	add_child(pellet_view)
+	pellet_view.configure(self)
 	if _host_authority:
 		_combat_active = true
 	elif session.has_baseline():
@@ -112,6 +126,9 @@ func is_host_authority() -> bool:
 
 func get_authority():
 	return authority
+
+func get_pellet_view():
+	return pellet_view
 
 func get_local_player_id() -> StringName:
 	return _local_player_id
@@ -333,6 +350,7 @@ func apply_baseline(baseline: Dictionary) -> Dictionary:
 	var result: Dictionary = replica.apply_baseline(baseline)
 	if not bool(result.get("applied", false)):
 		return _record_baseline_rejection(String(result.get("reason", "invalid_batch")), tick)
+	combat_replica.apply_packet(baseline)
 	_last_baseline = baseline.duplicate(true)
 	_last_baseline_tick = int(result.get("tick", tick))
 	_baseline_applied_count += 1
@@ -344,6 +362,9 @@ func apply_baseline(baseline: Dictionary) -> Dictionary:
 		_combat_active = true
 		combat_state_changed.emit(true)
 	_apply_all_replicas()
+	if not _pending_combat_packet.is_empty():
+		_on_combat_packet(_pending_combat_packet)
+		_pending_combat_packet = {}
 	baseline_applied.emit(baseline.duplicate(true))
 	replicas_updated.emit(baseline.duplicate(true))
 	return result
@@ -364,6 +385,7 @@ func apply_snapshot_batch(batch: Dictionary) -> Dictionary:
 		_last_rejection = result.duplicate(true)
 		snapshot_rejected.emit(result.duplicate(true))
 		return result
+	combat_replica.apply_packet(batch)
 	_last_applied_batch = batch.duplicate(true)
 	_last_applied_tick = int(result.get("tick", -1))
 	if client_view != null:
@@ -401,6 +423,7 @@ func _step_authority(delta: float) -> void:
 	while _step_accumulator + EPSILON >= FIXED_STEP and steps < MAX_CATCHUP_STEPS:
 		_consume_commands()
 		authority.step()
+		_send_combat()
 		_authority_steps += 1
 		# A late joiner is seeded from exactly this authority tick, after the
 		# step, so the reliable baseline is a complete and atomic state.
@@ -462,6 +485,7 @@ func _build_baseline() -> Dictionary:
 		"baseline_tick": tick,
 		"server_tick": tick,
 		"players": players,
+		"combat": authority.get_combat_state(),
 	}
 
 func _send_snapshot() -> void:
@@ -474,6 +498,7 @@ func _send_snapshot() -> void:
 		"match_epoch": session.get_match_epoch(),
 		"server_tick": authority.get_tick(),
 		"players": players,
+		"combat": authority.get_combat_state(),
 	}
 	if session.broadcast_snapshot_batch(batch) != OK:
 		return
@@ -504,6 +529,11 @@ func _on_session_closed() -> void:
 	if _session_closed:
 		return
 	_session_closed = true
+	if is_instance_valid(pellet_view):
+		pellet_view.clear()
+		pellet_view.set_process(false)
+	combat_replica.clear()
+	_pending_combat_packet.clear()
 	_combat_active = false
 	_pending_baseline_peers.clear()
 	if replica != null:
@@ -526,6 +556,8 @@ func _set_local_identity() -> void:
 	if identity.is_empty():
 		return
 	_local_player_id = StringName(String(identity.get("player_id", "")))
+	if not _host_authority and not replica.has_baseline():
+		combat_replica.configure(session.get_match_epoch())
 	if not _host_authority and replica != null and not replica.has_baseline():
 		replica.configure(session.get_match_epoch())
 	if not _host_authority and client_view != null and _local_player_id != &"":
@@ -554,7 +586,12 @@ func _apply_all_replicas() -> void:
 	else:
 		states = replica.get_states()
 	for key: String in _actors.keys():
-		_apply_state_to_actor(_actors[key], states.get(key, {}))
+		var state: Dictionary = states.get(key, {}).duplicate(true)
+		var combat_player: Dictionary = combat_replica.get_player(key)
+		if not combat_player.is_empty():
+			state["health"] = combat_player.get("health", state.get("health", 0.0))
+			state["dead"] = combat_player.get("dead", state.get("dead", false))
+		_apply_state_to_actor(_actors[key], state)
 
 func _apply_replica_state(player_id: String) -> void:
 	if replica == null:
@@ -583,3 +620,36 @@ func _apply_state_to_actor(actor: Node, state: Dictionary) -> void:
 		actor.set("is_dead", bool(state["dead"]))
 	if state.has("health") and actor.get("real_hp") != null:
 		actor.set("real_hp", float(state["health"]))
+
+func submit_fire(direction: Vector2) -> int:
+	return submit_command({"type": "fire", "direction": direction})
+
+func get_combat_state() -> Dictionary:
+	if _session_closed:
+		return {}
+	return authority.get_combat_state() if _host_authority else combat_replica.get_state()
+
+func _send_combat() -> void:
+	var state: Dictionary = authority.get_combat_state()
+	if int(state.revision) <= _sent_combat_revision:
+		return
+	_sent_combat_revision = int(state.revision)
+	var packet := {"match_epoch": session.get_match_epoch(), "server_tick": authority.get_tick(),
+		"combat": state, "players": authority.get_snapshots()}
+	session.broadcast_combat_state(packet)
+	combat_updated.emit(state.duplicate(true))
+
+func _on_combat_packet(packet: Dictionary) -> void:
+	if _host_authority or _session_closed:
+		return
+	if not replica.has_baseline():
+		if int(packet.get("server_tick", -1)) >= int(_pending_combat_packet.get("server_tick", -1)):
+			_pending_combat_packet = packet.duplicate(true)
+		return
+	if not combat_replica.apply_packet(packet):
+		return
+	# CombatReplica owns the packet's absolute health/death checkpoint. Movement
+	# remains on SnapshotReplica's regular stream, so a combat packet never
+	# produces a duplicate or regressed movement-snapshot rejection.
+	_apply_all_replicas()
+	combat_updated.emit(combat_replica.get_state())
