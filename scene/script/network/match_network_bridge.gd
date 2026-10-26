@@ -33,6 +33,7 @@ const EPSILON: float = 0.000001
 var combat_replica = preload("res://scene/script/network/combat_replica.gd").new()
 var _sent_combat_revision: int = 0
 var _pending_combat_packet: Dictionary = {}
+var _next_sword_action_id: int = 0
 signal combat_updated(state: Dictionary)
 
 var session
@@ -201,6 +202,89 @@ func submit_jump() -> int:
 func submit_dash(direction: Vector2) -> int:
 	return submit_command({"type": "dash", "direction": direction})
 
+func submit_sword(direction: Vector2, action_id: int = -1) -> int:
+	var use_action := action_id
+	if use_action <= 0:
+		_next_sword_action_id += 1
+		use_action = _next_sword_action_id
+	return submit_command({"type": "sword", "direction": direction, "action_id": use_action})
+
+func submit_guard(enabled: bool, direction: Vector2 = Vector2.ZERO) -> int:
+	return submit_command({"type": "guard", "enabled": enabled, "direction": direction})
+
+## Item commands always carry the item id and the authoritative revision the
+## caller observed. Callers may pass -1 to let the bridge resolve its current
+## replica checkpoint; an explicit value is preserved so stale CAS is testable.
+func submit_pickup(item_id: int, expected_revision: int = -1) -> int:
+	var revision := expected_revision
+	if revision < 0:
+		revision = get_item_revision(item_id)
+	if revision <= 0:
+		return -1
+	return submit_command({"type": "pickup", "item_id": item_id,
+		"expected_revision": revision})
+
+func submit_use_item(item_id: int, mode: String, expected_revision: int = -1,
+		amount: float = 0.0) -> int:
+	var revision := expected_revision
+	if revision < 0:
+		revision = get_item_revision(item_id)
+	if revision <= 0 or mode.is_empty():
+		return -1
+	return submit_command({"type": "use_item", "item_id": item_id, "mode": mode,
+		"expected_revision": revision, "amount": amount})
+
+func get_item_revision(item_id: int) -> int:
+	if _session_closed or item_id <= 0:
+		return -1
+	if _host_authority:
+		if authority == null:
+			return -1
+		return int(authority.get_item(item_id).get("revision", -1))
+	return int(combat_replica.get_item(item_id).get("revision", -1))
+
+func get_item(item_id: int) -> Dictionary:
+	if _session_closed:
+		return {}
+	if _host_authority:
+		return authority.get_item(item_id) if authority != null else {}
+	return combat_replica.get_item(item_id)
+
+func get_world_items() -> Array:
+	if _session_closed:
+		return []
+	if _host_authority:
+		return authority.get_world_items() if authority != null else []
+	return combat_replica.get_world_items()
+
+## Host-only setup seam for tests/maps. A client never sends this command.
+func grant_item(player_id: StringName, item_type: Variant, remaining: float, capacity: float) -> int:
+	if not _host_authority or authority == null or _session_closed:
+		return -1
+	return authority.grant_item(player_id, item_type, remaining, capacity)
+
+func get_guard_state(player_id: StringName) -> Dictionary:
+	if _session_closed:
+		return {}
+	if _host_authority:
+		return authority.get_guard_state(player_id) if authority != null else {}
+	return combat_replica.get_guard(player_id)
+
+func get_item_state() -> Dictionary:
+	if _session_closed:
+		return {}
+	if _host_authority:
+		return authority.get_item_state() if authority != null else {}
+	return combat_replica.get_items()
+
+func get_life_id(player_id: StringName) -> int:
+	if _session_closed:
+		return 0
+	if _host_authority and authority != null:
+		var snapshot: Dictionary = authority.get_snapshot(player_id)
+		return int(snapshot.get("life_id", 0))
+	return combat_replica.get_life_id(player_id)
+
 func bind_actor(player_id: StringName, actor: Node, local: bool = false) -> bool:
 	if not _configured or player_id == &"" or not is_instance_valid(actor):
 		return false
@@ -212,14 +296,58 @@ func bind_actor(player_id: StringName, actor: Node, local: bool = false) -> bool
 			return false
 	elif actor.has_method("set_authority_controlled"):
 		actor.set_authority_controlled(true)
+	# Network-bound actors no longer let local components decide combat or item
+	# state; their host-authoritative state is applied through the bridge.
+	if actor.has_method("set_network_authority"):
+		actor.set_network_authority(true, _host_authority)
 	_actors[key] = actor
-	if local:
+	var bind_local := local or (player_id == _local_player_id and _local_player_id != &"")
+	if bind_local:
 		_local_player_id = player_id
+		if actor.has_method("bind_network_intents"):
+			actor.bind_network_intents(self, player_id)
 		if not _host_authority and client_view != null:
 			client_view.set_local_player(player_id)
 			_configure_prediction_speed(actor)
-	if not _host_authority:
+	if _host_authority:
+		_apply_authority_domain_actor(key, actor)
+	else:
 		_apply_replica_state(key)
+	return true
+
+## Unbind one actor and immediately restore the offline input/authority path.
+## The host also drops the authority registration so no stale actor is stepped.
+func unbind_actor(actor: Node) -> bool:
+	if not is_instance_valid(actor):
+		return false
+	for key: String in _actors.keys():
+		if _actors[key] == actor:
+			return _unbind_key(key)
+	return false
+
+func unbind_player(player_id: StringName) -> bool:
+	var key := String(player_id)
+	if not _actors.has(key):
+		return false
+	return _unbind_key(key)
+
+func get_bound_actor(player_id: StringName) -> Node:
+	return _actors.get(String(player_id))
+
+func _unbind_key(key: String) -> bool:
+	if not _actors.has(key):
+		return false
+	var actor: Variant = _actors[key]
+	_actors.erase(key)
+	if _host_authority and authority != null:
+		authority.unregister_player(StringName(key))
+	if is_instance_valid(actor):
+		if actor.has_method("clear_network_intents"):
+			actor.clear_network_intents()
+		if actor.has_method("set_network_authority"):
+			actor.set_network_authority(false)
+		if actor.has_method("set_authority_controlled"):
+			actor.set_authority_controlled(false)
 	return true
 
 func get_replica_state(player_id: StringName) -> Dictionary:
@@ -423,6 +551,8 @@ func _step_authority(delta: float) -> void:
 	while _step_accumulator + EPSILON >= FIXED_STEP and steps < MAX_CATCHUP_STEPS:
 		_consume_commands()
 		authority.step()
+		_drain_authority_lifecycle()
+		_apply_authority_domain()
 		_send_combat()
 		_authority_steps += 1
 		# A late joiner is seeded from exactly this authority tick, after the
@@ -434,6 +564,38 @@ func _step_authority(delta: float) -> void:
 			_snapshot_accumulator -= SNAPSHOT_INTERVAL
 			_send_snapshot()
 		steps += 1
+
+## Respawn advances the authoritative life id. NetworkSession owns the stable
+## identity mapping and sends the new life to the affected client reliably.
+func _drain_authority_lifecycle() -> void:
+	if authority == null:
+		return
+	for event_variant: Variant in authority.drain_events():
+		if not (event_variant is Dictionary):
+			continue
+		var event: Dictionary = event_variant
+		if String(event.get("type", "")) == "player_respawned":
+			var player_id := StringName(String(event.get("player_id", "")))
+			var life_id := int(event.get("life_id", 0))
+			if player_id != &"" and life_id > 0 and session != null:
+				session.set_player_life(player_id, life_id)
+
+func _apply_authority_domain() -> void:
+	if not _host_authority or authority == null:
+		return
+	for key: String in _actors.keys():
+		_apply_authority_domain_actor(key, _actors[key])
+
+func _apply_authority_domain_actor(key: String, actor: Node) -> void:
+	if not is_instance_valid(actor) or authority == null:
+		return
+	if actor.has_method("apply_authoritative_guard"):
+		var guard: Dictionary = authority.get_guard_state(StringName(key))
+		if not guard.is_empty():
+			actor.apply_authoritative_guard(guard)
+	if actor.has_method("apply_authoritative_items"):
+		var snapshot: Dictionary = authority.get_snapshot(StringName(key))
+		actor.apply_authoritative_items(snapshot.get("items", []))
 
 func _consume_commands() -> void:
 	var records: Array = session.drain_commands()
@@ -540,9 +702,12 @@ func _on_session_closed() -> void:
 		replica.deactivate()
 	if client_view != null:
 		client_view.deactivate("session_closed")
-	# Fall back to the last authoritative replica for presentation once the
-	# presentation buffers are gone, instead of leaving a frozen predicted pose.
+	# Fall back to the last authoritative replica before releasing the actors,
+	# then restore every bound actor to the offline authority/input path.
 	_apply_all_replicas()
+	var keys: Array = _actors.keys()
+	for key_variant: Variant in keys:
+		_unbind_key(String(key_variant))
 	session_closed.emit()
 	combat_state_changed.emit(false)
 
@@ -591,7 +756,14 @@ func _apply_all_replicas() -> void:
 		if not combat_player.is_empty():
 			state["health"] = combat_player.get("health", state.get("health", 0.0))
 			state["dead"] = combat_player.get("dead", state.get("dead", false))
+			state["life_id"] = combat_player.get("life_id", state.get("life_id", 0))
 		_apply_state_to_actor(_actors[key], state)
+		if not _host_authority:
+			var guard: Dictionary = combat_replica.get_guard(StringName(key))
+			if not guard.is_empty() and _actors[key].has_method("apply_authoritative_guard"):
+				_actors[key].apply_authoritative_guard(guard)
+			if _actors[key].has_method("apply_authoritative_items"):
+				_actors[key].apply_authoritative_items(combat_replica.get_item_inventory(StringName(key)))
 
 func _apply_replica_state(player_id: String) -> void:
 	if replica == null:
@@ -605,6 +777,12 @@ func _apply_replica_state(player_id: String) -> void:
 	else:
 		state = replica.get_state(StringName(player_id))
 	_apply_state_to_actor(actor, state)
+	if not _host_authority:
+		var guard: Dictionary = combat_replica.get_guard(StringName(player_id))
+		if not guard.is_empty() and actor.has_method("apply_authoritative_guard"):
+			actor.apply_authoritative_guard(guard)
+		if actor.has_method("apply_authoritative_items"):
+			actor.apply_authoritative_items(combat_replica.get_item_inventory(StringName(player_id)))
 
 func _apply_state_to_actor(actor: Node, state: Dictionary) -> void:
 	if state.is_empty() or not is_instance_valid(actor):
@@ -620,6 +798,8 @@ func _apply_state_to_actor(actor: Node, state: Dictionary) -> void:
 		actor.set("is_dead", bool(state["dead"]))
 	if state.has("health") and actor.get("real_hp") != null:
 		actor.set("real_hp", float(state["health"]))
+	if state.has("life_id") and actor.get("life_id") != null:
+		actor.set("life_id", int(state["life_id"]))
 
 func submit_fire(direction: Vector2) -> int:
 	return submit_command({"type": "fire", "direction": direction})

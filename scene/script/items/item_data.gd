@@ -3,6 +3,9 @@ extends RefCounted
 var kind: StringName = &"item"
 var capacity: float = 1.0
 var remaining: float = 1.0
+## Stable network identity/version. Offline items leave these at zero.
+var item_id: int = 0
+var revision: int = 0
 var holder: WeakRef
 var icon: Texture2D
 var icon_region: Rect2

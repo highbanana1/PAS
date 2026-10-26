@@ -8,10 +8,17 @@ extends RefCounted
 const FIXED_STEP: float = 1.0 / 60.0
 
 var _shotgun = preload("res://scene/script/network/shotgun_authority.gd").new()
+var _melee = preload("res://scene/script/network/melee_authority.gd").new()
+var _items = preload("res://scene/script/network/item_authority.gd").new()
+var _guard_script = preload("res://scene/script/network/guard_authority.gd")
 
 var _players: Dictionary = {}
 var _events: Array[Dictionary] = []
 var _tick: int = 0
+var _domain_revision: int = 0
+var _seen_shot_revision: int = 0
+var _seen_melee_revision: int = 0
+var _seen_item_revision: int = 0
 
 func register_player(player_id: StringName, actor: Node, config: Dictionary = {}) -> bool:
 	if player_id == &"" or not is_instance_valid(actor) or _players.has(player_id):
@@ -22,6 +29,9 @@ func register_player(player_id: StringName, actor: Node, config: Dictionary = {}
 		var configured_spawn: Variant = config["spawn_position"]
 		if configured_spawn is Vector2 and configured_spawn.is_finite() and actor.get("spawn_position") != null:
 			actor.set("spawn_position", configured_spawn)
+	var life_id: int = maxi(int(config.get("life_id", 1)), 1)
+	var guard = _guard_script.new()
+	guard.reset(life_id)
 	var record: Dictionary = {
 		"id": player_id,
 		"actor": actor,
@@ -31,6 +41,8 @@ func register_player(player_id: StringName, actor: Node, config: Dictionary = {}
 		"respawn_remaining": 0.0,
 		"revision": 0,
 		"last_sequence": -1,
+		"life_id": life_id,
+		"guard": guard,
 	}
 	if bool(record["dead"]):
 		record["respawn_remaining"] = _respawn_delay(actor)
@@ -52,6 +64,8 @@ func unregister_player(player_id: StringName) -> bool:
 ## sequence is the NetworkSession envelope sequence when present. It is echoed
 ## in snapshots as ack_sequence so a client can drop exactly the confirmed
 ## predicted inputs without replaying them again. Gameplay never trusts it.
+## Client payload fields such as damage, target id, final guard value, health,
+## item owner or revision are never read as facts.
 func submit_command(player_id: StringName, command: Dictionary, sequence: int = -1) -> bool:
 	if not _players.has(player_id) or command.is_empty():
 		return false
@@ -63,8 +77,77 @@ func submit_command(player_id: StringName, command: Dictionary, sequence: int = 
 				return false
 			var accepted: bool = _shotgun.request_fire(player_id, record["actor"], command.get("direction"), _tick)
 			if accepted:
+				# Attack-cancels-guard applies to every weapon, not only the
+				# sword. Clear both the active guard and its held input so a
+				# later tick cannot silently raise it again.
+				record["guard"].cancel()
+				_touch_domain()
 				_acknowledge(record, sequence)
 			return accepted
+		&"sword":
+			if not _accepts_actions(record) or not command.has("action_id"):
+				return false
+			var action_id := int(command.get("action_id", 0))
+			if action_id <= 0:
+				return false
+			var accepted_sword: bool = _melee.request_sword(
+				player_id, record["actor"], command.get("direction"), action_id,
+				_tick, int(record["life_id"]), record["guard"])
+			if accepted_sword:
+				_touch_domain()
+				_acknowledge(record, sequence)
+			return accepted_sword
+		&"guard":
+			if not _accepts_actions(record):
+				return false
+			var enabled := bool(command.get("enabled", false))
+			var facing: Variant = command.get("direction", Vector2.ZERO)
+			if enabled and (not facing is Vector2 or not (facing as Vector2).is_finite()
+					or (facing as Vector2).is_zero_approx()):
+				return false
+			# Match the offline controller: a swing and its recovery window cannot
+			# be interrupted by held guard input.
+			if enabled and _melee.is_busy(player_id, _tick):
+				return false
+			var requested: bool = record["guard"].request(
+				enabled, facing if facing is Vector2 else Vector2.ZERO,
+				true, int(record["life_id"]))
+			if requested:
+				_touch_domain()
+				_acknowledge(record, sequence)
+			return requested
+		&"pickup":
+			if not _accepts_actions(record):
+				return false
+			var item_id := int(command.get("item_id", -1))
+			if item_id <= 0:
+				return false
+			var pickup: Dictionary = _items.request_pickup(
+				player_id, item_id, _actor_position(record["actor"]), true,
+				int(command.get("expected_revision", -1)))
+			if bool(pickup.get("accepted", false)):
+				_touch_domain()
+				_acknowledge(record, sequence)
+				return true
+			return false
+		&"use_item":
+			if not _accepts_actions(record):
+				return false
+			var use_item_id := int(command.get("item_id", -1))
+			var use_mode := String(command.get("mode", ""))
+			var use_amount: Variant = command.get("amount", 0.0)
+			if use_item_id <= 0 or use_mode.is_empty():
+				return false
+			if not (use_amount is float or use_amount is int):
+				return false
+			var use: Dictionary = _items.request_use(
+				player_id, use_item_id, int(command.get("expected_revision", -1)),
+				use_mode, float(use_amount), record["actor"])
+			if bool(use.get("accepted", false)):
+				_touch_domain()
+				_acknowledge(record, sequence)
+				return true
+			return false
 		&"move":
 			record["move_input"] = _requested_direction(command, record["move_input"])
 			_acknowledge(record, sequence)
@@ -79,8 +162,8 @@ func submit_command(player_id: StringName, command: Dictionary, sequence: int = 
 		&"dash":
 			if not _accepts_actions(record):
 				return false
-			var actions: Array = record["actions"]
-			actions.append({
+			var dash_actions: Array = record["actions"]
+			dash_actions.append({
 				"type": &"dash",
 				"direction": _requested_direction(command, Vector2.ZERO),
 			})
@@ -97,7 +180,11 @@ func step() -> void:
 	_tick += 1
 	for player_id: StringName in _players.keys():
 		_step_player(_players[player_id])
+	# All actors moved for this tick before melee and pellets resolve. Deaths
+	# caused by weapon damage are observed by the lifecycle on the next tick.
+	_melee.step(_tick, _players)
 	_shotgun.step(_tick, _players)
+	_sync_domain_revisions()
 
 func get_tick() -> int:
 	return _tick
@@ -142,6 +229,9 @@ func get_snapshot(player_id: StringName) -> Dictionary:
 		"max_health": _actor_health(actor, "max_hp"),
 		"respawn_remaining": float(record["respawn_remaining"]),
 		"ack_sequence": int(record.get("last_sequence", -1)),
+		"life_id": int(record["life_id"]),
+		"guard": record["guard"].get_state(),
+		"items": _items.get_inventory(player_id),
 	}
 
 func drain_events() -> Array[Dictionary]:
@@ -149,6 +239,30 @@ func drain_events() -> Array[Dictionary]:
 	result.append_array(_events)
 	_events.clear()
 	return result
+
+func get_guard_state(player_id: StringName) -> Dictionary:
+	if not _players.has(player_id):
+		return {}
+	return _players[player_id]["guard"].get_state()
+
+func get_item_state() -> Dictionary:
+	return _items.get_state()
+
+func get_item(item_id: int) -> Dictionary:
+	return _items.get_item(item_id)
+
+func get_world_items() -> Array:
+	return _items.get_world_items()
+
+## Host-only setup/probe seam for a backpack item. Values are already validated
+## numeric state; ownership is assigned by the host, never by a client command.
+func grant_item(player_id: StringName, item_type: Variant, remaining: float, capacity: float) -> int:
+	if not _players.has(player_id):
+		return -1
+	var item_id: int = _items.grant(player_id, item_type, remaining, capacity)
+	if item_id > 0:
+		_touch_domain()
+	return item_id
 
 func _step_player(record: Dictionary) -> void:
 	if not is_instance_valid(record.get("actor")):
@@ -159,10 +273,26 @@ func _step_player(record: Dictionary) -> void:
 		_step_dead(record, actor)
 		return
 	if bool(record["dead"]):
+		# Compatibility path: an actor respawned outside the authority still
+		# advances the stable life and refreshes authority-owned combat state.
 		record["dead"] = false
 		record["respawn_remaining"] = 0.0
+		record["life_id"] = int(record["life_id"]) + 1
+		record["guard"].reset(int(record["life_id"]))
+		_melee.reset_player(record["id"], int(record["life_id"]))
 		_clear_actions(record)
-		_emit_event("player_respawned", record, {})
+		_touch_domain()
+		_emit_event("player_respawned", record, {"life_id": int(record["life_id"])})
+	var guard_before: Dictionary = record["guard"].get_state()
+	var guard_changed: bool = record["guard"].tick(FIXED_STEP)
+	if guard_changed:
+		var guard_after: Dictionary = record["guard"].get_state()
+		if _tick % 3 == 0 \
+				or bool(guard_before.get("is_guarding", false)) != bool(guard_after.get("is_guarding", false)) \
+				or bool(guard_before.get("exhausted", false)) != bool(guard_after.get("exhausted", false)) \
+				or is_zero_approx(float(guard_after.get("value", 0.0))) \
+				or is_equal_approx(float(guard_after.get("value", 0.0)), float(guard_after.get("maximum", 100.0))):
+			_touch_domain()
 	_apply_actions(record, actor)
 	if actor is CharacterBody2D and actor.is_physics_processing():
 		var motor: Node = actor.get_motor()
@@ -176,7 +306,15 @@ func _step_dead(record: Dictionary, actor: Node) -> void:
 	if not bool(record["dead"]):
 		record["dead"] = true
 		remaining = _respawn_delay(actor)
-		_emit_event("player_died", record, {})
+		record["guard"].cancel()
+		_melee.reset_player(record["id"], int(record["life_id"]))
+		var dropped: Array = _items.drop_inventory(
+			record["id"], int(record["life_id"]), _actor_position(actor))
+		_touch_domain()
+		_emit_event("player_died", record, {
+			"life_id": int(record["life_id"]),
+			"dropped_items": dropped,
+		})
 	remaining = maxf(remaining - FIXED_STEP, 0.0)
 	record["respawn_remaining"] = remaining
 	_set_respawn_remaining(actor, remaining)
@@ -186,7 +324,14 @@ func _step_dead(record: Dictionary, actor: Node) -> void:
 			actor.respawn(_spawn_position(record, actor))
 		record["dead"] = false
 		record["respawn_remaining"] = 0.0
-		_emit_event("player_respawned", record, {})
+		record["life_id"] = int(record["life_id"]) + 1
+		record["guard"].reset(int(record["life_id"]))
+		_melee.reset_player(record["id"], int(record["life_id"]))
+		_touch_domain()
+		_emit_event("player_respawned", record, {
+			"life_id": int(record["life_id"]),
+			"health": _actor_health(actor, "real_hp"),
+		})
 
 func _accepts_actions(record: Dictionary) -> bool:
 	if is_instance_valid(record.get("actor")) and not bool(record["dead"]):
@@ -257,9 +402,44 @@ func _emit_event(event_type: String, record: Dictionary, extra: Dictionary = {})
 		"type": event_type,
 		"player_id": String(record["id"]),
 		"tick": _tick,
+		"life_id": int(record.get("life_id", 1)),
 	}
 	event.merge(extra, true)
 	_events.append(event)
 
+func _touch_domain() -> void:
+	_domain_revision += 1
+
+func _sync_domain_revisions() -> void:
+	var shot_revision: int = int(_shotgun.get_state().get("revision", 0))
+	if shot_revision != _seen_shot_revision:
+		_seen_shot_revision = shot_revision
+		_touch_domain()
+	var melee_revision: int = int(_melee.get_state().get("revision", 0))
+	if melee_revision != _seen_melee_revision:
+		_seen_melee_revision = melee_revision
+		_touch_domain()
+	if int(_items.revision) != _seen_item_revision:
+		_seen_item_revision = int(_items.revision)
+		_touch_domain()
+
 func get_combat_state() -> Dictionary:
-	return _shotgun.get_state()
+	var shotgun_state: Dictionary = _shotgun.get_state()
+	var melee_state: Dictionary = _melee.get_state()
+	var guards: Dictionary = {}
+	for player_id: StringName in _players.keys():
+		guards[String(player_id)] = _players[player_id]["guard"].get_state()
+	return {
+		# One monotonic checkpoint revision for the whole combat domain. Guard
+		# drain between discrete changes still travels in the 20 Hz snapshots.
+		"revision": _domain_revision,
+		"server_tick": _tick,
+		"projectiles": shotgun_state.get("projectiles", []),
+		"events": shotgun_state.get("events", []),
+		"shotgun_revision": int(shotgun_state.get("revision", 0)),
+		"melee_events": melee_state.get("events", []),
+		"melee_revision": int(melee_state.get("revision", 0)),
+		"pending_swords": int(melee_state.get("pending_actions", 0)),
+		"guards": guards,
+		"items": _items.get_state(),
+	}

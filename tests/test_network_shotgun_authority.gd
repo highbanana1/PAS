@@ -19,6 +19,7 @@ func run() -> void:
 	if not probe.has_method("get_combat_state"):
 		quit(1); return
 	await test_fire_validation()
+	await test_fire_cancels_guard()
 	await test_hit(false)
 	await test_hit(true)
 	await test_wall(false)
@@ -60,6 +61,22 @@ func test_fire_validation() -> void:
 	check(shot_events(a.get_combat_state()).size() == 2, "Shot accepted after authoritative cooldown")
 	shooter.force_dead()
 	check(not a.submit_command(&"shooter", {"type":"fire","direction":Vector2.RIGHT}, 5), "Dead shooter cannot fire")
+	shooter.free()
+func test_fire_cancels_guard() -> void:
+	var a = Authority.new()
+	var shooter = actor_at(Vector2.ZERO)
+	a.register_player(&"shooter", shooter)
+	await physics_frame
+	check(a.submit_command(&"shooter", {"type":"guard","enabled":true,"direction":Vector2.RIGHT}, 1), "Shooter raises guard before firing")
+	var raised: Dictionary = a.get_guard_state(&"shooter")
+	check(bool(raised.get("is_guarding", false)) and bool(raised.get("hold_requested", false)), "Guard is active with held intent")
+	check(a.submit_command(&"shooter", {"type":"fire","direction":Vector2.RIGHT}, 2), "Valid fire is accepted while guarding")
+	var after: Dictionary = a.get_guard_state(&"shooter")
+	check(not bool(after.get("is_guarding", true)), "Fire immediately lowers the authoritative guard")
+	check(not bool(after.get("hold_requested", true)), "Fire clears the held guard intent")
+	a.step()
+	after = a.get_guard_state(&"shooter")
+	check(not bool(after.get("is_guarding", true)) and not bool(after.get("hold_requested", true)), "Held guard cannot silently resume after firing")
 	shooter.free()
 func test_hit(lethal: bool) -> void:
 	var a = Authority.new()

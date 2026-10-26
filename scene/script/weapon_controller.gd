@@ -10,6 +10,9 @@ var actor: Node2D
 var _guard = Guard.new()
 var _input = LocalInput.new()
 var _weapons: Dictionary = {}
+## Network-bound actors receive guard state and combat commands from the host
+## bridge. This flag is never set by the offline adapter.
+var network_authority: bool = false
 var current_weapon: int = Weapon.GUN
 var aim_direction: Vector2 = Vector2.RIGHT
 @export var max_guard: float = 100.0:
@@ -127,7 +130,10 @@ func try_block(attack_origin: Vector2) -> bool:
 	return _guard.try_block(Context.new(1.0, attack_origin))
 
 func recover_guard(delta: float) -> void:
-	# Compatibility entry point; only the adapter polls local Input.
+	# Compatibility entry point; only the adapter polls local Input. Network
+	# actors take guard timing from the authoritative checkpoint instead.
+	if network_authority:
+		return
 	if _input.enabled(): _guard.hold_requested = _input.is_guard_requested()
 	_guard.tick(delta)
 
@@ -163,3 +169,29 @@ func reset_after_respawn() -> void:
 	for weapon in _weapons.values():
 		if is_instance_valid(weapon): weapon.reset_state()
 	refresh_equipped_weapon()
+
+## Called only when MatchNetworkBridge binds this actor to an authoritative
+## match. Local guard/attack sampling is suspended; authority checkpoints drive
+## the guard component instead.
+func set_network_authority(enabled: bool) -> void:
+	network_authority = enabled
+	# Input sampling stays active in both modes: offline it drives the local
+	# controller, network it submits intents through the bridge.
+	_input.set_process(true)
+	if enabled:
+		_guard.request_guard(false)
+		for weapon in _weapons.values():
+			if is_instance_valid(weapon): weapon.cancel_attack()
+	refresh_equipped_weapon()
+
+func bind_network_intents(bridge: Node, player_id: StringName) -> bool:
+	return _input.bind_network_intents(bridge, player_id)
+
+func clear_network_intents() -> void:
+	_input.clear_network_intents()
+
+func apply_authoritative_guard(state: Dictionary) -> void:
+	if not network_authority:
+		return
+	_guard.apply_authority_state(state)
+	_update_guard_visual()

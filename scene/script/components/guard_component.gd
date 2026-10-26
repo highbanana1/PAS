@@ -68,3 +68,26 @@ func reset_state() -> void:
 	value = maximum
 	request_guard(false)
 	changed.emit(value, maximum)
+
+## Mirrors a host-authoritative checkpoint onto local presentation. No local
+## input, timer or block result is allowed to overwrite these values in network
+## mode; WeaponController suspends the local combat input adapter.
+func apply_authority_state(state: Dictionary) -> void:
+	if state.is_empty():
+		return
+	var new_maximum: Variant = state.get("maximum", maximum)
+	if (new_maximum is float or new_maximum is int) and float(new_maximum) > 0.0:
+		maximum = float(new_maximum)
+	var new_value: Variant = state.get("value", value)
+	if new_value is float or new_value is int:
+		value = clampf(float(new_value), 0.0, maximum)
+	var new_direction: Variant = state.get("direction", direction)
+	if new_direction is Vector2 and (new_direction as Vector2).is_finite() \
+			and not (new_direction as Vector2).is_zero_approx():
+		direction = (new_direction as Vector2).normalized()
+	exhausted = bool(state.get("exhausted", exhausted))
+	hold_requested = bool(state.get("hold_requested", hold_requested))
+	var new_guarding := bool(state.get("is_guarding", is_guarding))
+	if is_guarding != new_guarding:
+		_set_guard(new_guarding)
+	changed.emit(value, maximum)

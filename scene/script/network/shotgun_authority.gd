@@ -106,9 +106,34 @@ func _resolve_hit(index: int, hit: Dictionary, players: Dictionary, shooter: Nod
 			target_id = String(player_id)
 			break
 	if not target_id.is_empty() and target is Node2D:
-		# Each pellet invokes damage independently, preserving health-cell overflow.
-		result = Receiver.deliver(target, Context.new(2.0, pellet.origin, shooter, false))
+		var target_record: Dictionary = players.get(StringName(target_id), {})
+		var guard = target_record.get("guard")
+		var blocked := false
+		if guard != null and target_record.get("dead") != true:
+			# Guard direction, resource and exhaustion are host state. The
+			# target's client-local WeaponController never decides this block.
+			var toward_attack: Vector2 = pellet.origin - (target as Node2D).global_position
+			var block: Dictionary = guard.try_block(toward_attack, true)
+			if bool(block.get("blocked", false)):
+				blocked = true
+				result = Context.Result.BLOCKED
+				_emit({
+					"type": "guard_blocked",
+					"shot_id": pellet.shot_id,
+					"pellet_id": pellet.pellet_id,
+					"target_id": target_id,
+					"guard": block,
+					"result": result,
+				})
+		if not blocked:
+			# Each pellet invokes damage independently, preserving health-cell
+			# overflow. Guard already decided above, so this context is
+			# unblockable and cannot charge the guard a second time.
+			result = Receiver.deliver(target, Context.new(2.0, pellet.origin, shooter, false))
 	_remove(index, "hit", {"target_id": target_id, "result": result})
+
+func get_revision() -> int:
+	return _event_id
 
 func _sweep(shooter: Node2D, origin: Vector2, motion: Vector2, players: Dictionary) -> Dictionary:
 	if not shooter.is_inside_tree():
