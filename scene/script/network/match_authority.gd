@@ -6,6 +6,7 @@ extends RefCounted
 ## lifecycle events. Command queues and timing stay inside this module.
 
 const FIXED_STEP: float = 1.0 / 60.0
+const Rules = preload("res://scene/script/combat/melee_guard_rules.gd")
 
 var _shotgun = preload("res://scene/script/network/shotgun_authority.gd").new()
 var _melee = preload("res://scene/script/network/melee_authority.gd").new()
@@ -30,8 +31,10 @@ func register_player(player_id: StringName, actor: Node, config: Dictionary = {}
 		if configured_spawn is Vector2 and configured_spawn.is_finite() and actor.get("spawn_position") != null:
 			actor.set("spawn_position", configured_spawn)
 	var life_id: int = maxi(int(config.get("life_id", 1)), 1)
+	var combat_config := _combat_config(actor, config)
 	var guard = _guard_script.new()
-	guard.reset(life_id)
+	guard.configure(combat_config.guard, life_id)
+	_melee.configure_player(player_id, combat_config.sword)
 	var record: Dictionary = {
 		"id": player_id,
 		"actor": actor,
@@ -57,9 +60,19 @@ func unregister_player(player_id: StringName) -> bool:
 		return false
 	var record: Dictionary = _players[player_id]
 	_players.erase(player_id)
+	_melee.remove_player(player_id)
 	_clear_actions(record)
 	_emit_event("player_unregistered", record, {})
 	return true
+
+func _combat_config(actor: Node, registration: Dictionary) -> Dictionary:
+	var candidate: Variant = registration.get("combat_rules", {})
+	if (not candidate is Dictionary or (candidate as Dictionary).is_empty()) \
+			and actor.has_method("get_authority_combat_config"):
+		candidate = actor.get_authority_combat_config()
+	if candidate is Dictionary:
+		return Rules.validated_config(candidate)
+	return Rules.new().to_authority_config()
 
 ## sequence is the NetworkSession envelope sequence when present. It is echoed
 ## in snapshots as ack_sequence so a client can drop exactly the confirmed

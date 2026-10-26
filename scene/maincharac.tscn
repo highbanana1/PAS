@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://dix6gnb4swhbk" path="res://asset/pic/run.PNG" id="3_7g0xw"]
 [ext_resource type="PackedScene" path="res://scene/sword.tscn" id="7_sword"]
 [ext_resource type="Script" uid="uid://d2jiqfev5fljc" path="res://scene/script/weapon_controller.gd" id="8_weapons"]
+[ext_resource type="Resource" path="res://scene/resources/default_melee_guard_rules.tres" id="9_combat_rules"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_4ps4g"]
 shader = ExtResource("2_xno6r")
@@ -197,5 +198,6 @@ ignore_time_scale = true
 
 [node name="WeaponController" type="Node" parent="." unique_id=620397751]
 script = ExtResource("8_weapons")
+combat_rules = ExtResource("9_combat_rules")
 
 [connection signal="timeout" from="Timer" to="." method="_on_timer_timeout"]

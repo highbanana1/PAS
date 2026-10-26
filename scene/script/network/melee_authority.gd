@@ -6,26 +6,35 @@ extends RefCounted
 
 const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
 const Context = preload("res://scene/script/combat/attack_context.gd")
+const Rules = preload("res://scene/script/combat/melee_guard_rules.gd")
 
-const DAMAGE: float = 2.0
-const RANGE: float = 36.0
-const SWING_ANGLE: float = 120.0
-const WINDUP_TICKS: int = 3
-## The offline blade travels for about 0.09 s (5.4 ticks at 60 Hz). Six fixed
-## authority ticks preserve that feel while keeping each interval inspectable.
-const SWEEP_TICKS: int = 6
+const FIXED_STEP: float = 1.0 / 60.0
 ## Small angular overlap, mirroring the offline sector, so a target on a sector
 ## boundary is not missed by floating point. It never widens the nominal arc.
 const SECTOR_PADDING_DEGREES: float = 5.0
-const COOLDOWN_TICKS: int = 15
 const MAX_EVENTS: int = 128
 
 var _pending: Array[Dictionary] = []
 var _next_sword_tick: Dictionary = {}
+var _busy_until_tick: Dictionary = {}
 var _used_actions: Dictionary = {}
 var _events: Array[Dictionary] = []
 var _event_id: int = 0
 var _tick: int = 0
+var _player_rules: Dictionary = {}
+
+func configure_player(player_id: StringName, rules: Dictionary) -> void:
+	_player_rules[player_id] = (rules if not rules.is_empty() else _default_rules()).duplicate(true)
+
+func remove_player(player_id: StringName) -> void:
+	_player_rules.erase(player_id)
+	_next_sword_tick.erase(player_id)
+	_busy_until_tick.erase(player_id)
+	var kept: Array[Dictionary] = []
+	for action: Dictionary in _pending:
+		if StringName(action.player_id) != player_id:
+			kept.append(action)
+	_pending = kept
 
 func request_sword(player_id: StringName, actor: Node, direction: Variant, action_id: int,
 		tick: int, life_id: int, guard) -> bool:
@@ -48,8 +57,17 @@ func request_sword(player_id: StringName, actor: Node, direction: Variant, actio
 	var key := "%s:%d" % [String(player_id), action_id]
 	if _used_actions.has(key):
 		return false
+	var rules: Dictionary = _rules_for(player_id)
+	var windup_ticks := _duration_ticks(float(rules.get("windup", Rules.DEFAULT_SWORD_WINDUP)))
+	var sweep_ticks := _duration_ticks(float(rules.get("swing", Rules.DEFAULT_SWORD_SWING)))
+	var cooldown_ticks := _duration_ticks(float(rules.get("cooldown", Rules.DEFAULT_SWORD_COOLDOWN)))
+	var full_action_seconds := float(rules.get("windup", Rules.DEFAULT_SWORD_WINDUP)) \
+		+ float(rules.get("swing", Rules.DEFAULT_SWORD_SWING)) \
+		+ float(rules.get("recovery", Rules.DEFAULT_SWORD_RECOVERY))
+	cooldown_ticks = maxi(cooldown_ticks, _duration_ticks(full_action_seconds))
 	_used_actions[key] = tick
-	_next_sword_tick[player_id] = tick + COOLDOWN_TICKS
+	_next_sword_tick[player_id] = tick + cooldown_ticks
+	_busy_until_tick[player_id] = tick + _duration_ticks(full_action_seconds)
 	if guard != null:
 		guard.cancel()
 	_pending.append({
@@ -59,7 +77,11 @@ func request_sword(player_id: StringName, actor: Node, direction: Variant, actio
 		"action_id": action_id,
 		"attacker_life_id": life_id,
 		"request_tick": tick,
-		"resolve_tick": tick + WINDUP_TICKS,
+		"resolve_tick": tick + windup_ticks,
+		"damage": float(rules.get("damage", Rules.DEFAULT_SWORD_DAMAGE)),
+		"range": float(rules.get("range", Rules.DEFAULT_SWORD_RANGE)),
+		"arc": float(rules.get("arc", Rules.DEFAULT_SWORD_ARC)),
+		"sweep_ticks": sweep_ticks,
 		"sweep_step": 0,
 		"hits": {},
 	})
@@ -69,9 +91,9 @@ func request_sword(player_id: StringName, actor: Node, direction: Variant, actio
 		"attacker_id": String(player_id),
 		"attacker_life_id": life_id,
 		"direction": aim.normalized(),
-		"damage": DAMAGE,
-		"range": RANGE,
-		"arc": SWING_ANGLE,
+		"damage": float(rules.get("damage", Rules.DEFAULT_SWORD_DAMAGE)),
+		"range": float(rules.get("range", Rules.DEFAULT_SWORD_RANGE)),
+		"arc": float(rules.get("arc", Rules.DEFAULT_SWORD_ARC)),
 	})
 	return true
 
@@ -90,12 +112,13 @@ func step(tick: int, players: Dictionary) -> void:
 				"reason": "attacker_life_changed"})
 			continue
 		var sweep_step: int = int(action.sweep_step)
-		var previous := _sweep_progress(float(sweep_step) / float(SWEEP_TICKS))
-		var current := _sweep_progress(float(sweep_step + 1) / float(SWEEP_TICKS))
+		var sweep_ticks := maxi(int(action.get("sweep_ticks", 1)), 1)
+		var previous := _sweep_progress(float(sweep_step) / float(sweep_ticks))
+		var current := _sweep_progress(float(sweep_step + 1) / float(sweep_ticks))
 		_sweep_sector(action, attacker, players, previous, current)
 		sweep_step += 1
 		action["sweep_step"] = sweep_step
-		if sweep_step >= SWEEP_TICKS:
+		if sweep_step >= sweep_ticks:
 			_pending.remove_at(index)
 			if (action.hits as Dictionary).is_empty():
 				_emit({"type": "sword_miss", "action_id": action.action_id,
@@ -113,10 +136,11 @@ func get_state() -> Dictionary:
 ## Mirrors the offline WeaponController rule: a swing (including its recovery
 ## window) cannot be interrupted by held guard input.
 func is_busy(player_id: StringName, tick: int) -> bool:
-	return tick < int(_next_sword_tick.get(player_id, -1))
+	return tick < int(_busy_until_tick.get(player_id, -1))
 
 func reset_player(player_id: StringName, next_life: int) -> void:
 	_next_sword_tick.erase(player_id)
+	_busy_until_tick.erase(player_id)
 	var kept: Array[Dictionary] = []
 	for action: Dictionary in _pending:
 		if StringName(action.player_id) != player_id:
@@ -127,6 +151,16 @@ func reset_player(player_id: StringName, next_life: int) -> void:
 		"attacker_id": String(player_id),
 		"attacker_life_id": next_life,
 	})
+
+func _rules_for(player_id: StringName) -> Dictionary:
+	var rules_variant: Variant = _player_rules.get(player_id, {})
+	return rules_variant if rules_variant is Dictionary and not rules_variant.is_empty() else _default_rules()
+
+func _default_rules() -> Dictionary:
+	return Rules.new().to_authority_config().sword
+
+func _duration_ticks(seconds: float) -> int:
+	return maxi(int(ceil(seconds / FIXED_STEP)), 1)
 
 func _action_attacker(action: Dictionary, players: Dictionary) -> Node2D:
 	var attacker_record: Dictionary = players.get(StringName(action.player_id), {})
@@ -145,14 +179,17 @@ func _sweep_sector(action: Dictionary, attacker: Node2D, players: Dictionary,
 		previous: float, current: float) -> void:
 	var attacker_id := String(action.player_id)
 	var life_id := int(action.attacker_life_id)
-	var half_angle := deg_to_rad(SWING_ANGLE * 0.5)
+	var damage := float(action.get("damage", Rules.DEFAULT_SWORD_DAMAGE))
+	var attack_range := float(action.get("range", Rules.DEFAULT_SWORD_RANGE))
+	var swing_angle := float(action.get("arc", Rules.DEFAULT_SWORD_ARC))
+	var half_angle := deg_to_rad(swing_angle * 0.5)
 	var padding := deg_to_rad(SECTOR_PADDING_DEGREES)
 	# The blade moves from -half_angle to +half_angle. Only this interval's
 	# sector is queried, so a side target waits until the blade reaches it.
 	var sector_start := maxf(lerpf(-half_angle, half_angle, previous) - padding, -half_angle)
 	var sector_finish := minf(lerpf(-half_angle, half_angle, current) + padding, half_angle)
 	var targets := _targets(
-		attacker, action.direction, players, attacker_id, sector_start, sector_finish)
+		attacker, action.direction, players, attacker_id, sector_start, sector_finish, attack_range)
 	var hits: Dictionary = action.hits
 	for target_record: Dictionary in targets:
 		var target_actor: Node2D = target_record.get("actor")
@@ -179,7 +216,7 @@ func _sweep_sector(action: Dictionary, attacker: Node2D, players: Dictionary,
 					"attacker_life_id": life_id,
 					"target_id": target_id,
 					"target_life_id": target_life,
-					"damage": DAMAGE,
+					"damage": damage,
 					"result": Context.Result.BLOCKED,
 					"guard": block,
 				})
@@ -188,7 +225,7 @@ func _sweep_sector(action: Dictionary, attacker: Node2D, players: Dictionary,
 		# The guard decision was made above against host state. Passing an
 		# unblockable context here prevents the target's local component from
 		# charging or deciding a second time.
-		var result: int = Receiver.deliver(target_actor, Context.new(DAMAGE, origin, attacker, false))
+		var result: int = Receiver.deliver(target_actor, Context.new(damage, origin, attacker, false))
 		_emit({
 			"type": "sword_hit",
 			"action_id": int(action.action_id),
@@ -196,7 +233,7 @@ func _sweep_sector(action: Dictionary, attacker: Node2D, players: Dictionary,
 			"attacker_life_id": life_id,
 			"target_id": target_id,
 			"target_life_id": target_life,
-			"damage": DAMAGE,
+			"damage": damage,
 			"result": result,
 		})
 
@@ -207,7 +244,7 @@ func _hit_key(action: Dictionary, target_id: String, target_life: int) -> String
 	]
 
 func _targets(attacker: Node2D, direction: Vector2, players: Dictionary, attacker_id: String,
-		sector_start: float, sector_finish: float) -> Array[Dictionary]:
+		sector_start: float, sector_finish: float, attack_range: float) -> Array[Dictionary]:
 	var candidates: Array[Dictionary] = []
 	for player_id: StringName in players:
 		var record: Dictionary = players[player_id]
@@ -220,7 +257,7 @@ func _targets(attacker: Node2D, direction: Vector2, players: Dictionary, attacke
 			continue
 		var offset: Vector2 = actor.global_position - attacker.global_position
 		var distance := offset.length()
-		if distance <= 0.0 or distance > RANGE:
+		if distance <= 0.0 or distance > attack_range:
 			continue
 		var target_angle := direction.angle_to(offset)
 		if target_angle < sector_start or target_angle > sector_finish:

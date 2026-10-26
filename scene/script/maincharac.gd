@@ -58,6 +58,9 @@ func get_guard_component() -> Node:
 func get_weapon_controller() -> Node:
 	return $WeaponController
 
+func get_authority_combat_config() -> Dictionary:
+	return $WeaponController.get_authority_combat_config()
+
 func get_motor() -> Node:
 	return _motor
 

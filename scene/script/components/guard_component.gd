@@ -1,5 +1,6 @@
 class_name GuardComponent
 extends Node
+const Rules = preload("res://scene/script/combat/melee_guard_rules.gd")
 signal changed(value: float, maximum: float)
 signal guard_changed(enabled: bool)
 signal blocked(direction: Vector2)
@@ -16,9 +17,17 @@ var hold_requested: bool = false
 ## Exhaustion survives button release and weapon switches until fully recovered.
 var exhausted: bool = false
 
-func configure(owner_actor: Node2D) -> void:
+func configure(owner_actor: Node2D, rules: Dictionary = {}) -> void:
 	actor = owner_actor
+	apply_combat_rules(rules if not rules.is_empty() else Rules.new().to_authority_config().guard)
 	reset_state()
+
+func apply_combat_rules(rules: Dictionary) -> void:
+	maximum = float(rules.get("maximum", maximum))
+	block_cost = float(rules.get("block_cost", block_cost))
+	duration = float(rules.get("duration", duration))
+	recovery_duration = float(rules.get("recovery_duration", recovery_duration))
+	angle = float(rules.get("angle", angle))
 
 func request_guard(enabled: bool, facing: Vector2 = Vector2.ZERO) -> void:
 	if not facing.is_zero_approx() and facing.is_finite(): direction = facing.normalized()

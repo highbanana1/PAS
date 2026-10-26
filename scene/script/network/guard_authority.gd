@@ -2,24 +2,25 @@ extends RefCounted
 ## Host-owned guard resource and facing. Commands only supply intent; every
 ## value, direction, exhaustion lock and block result is decided here.
 
-const MAXIMUM: float = 100.0
-const BLOCK_COST: float = 20.0
-const DRAIN_DURATION: float = 10.0
-const RECOVERY_DURATION: float = 15.0
-const GUARD_ARC: float = 140.0
+const Rules = preload("res://scene/script/combat/melee_guard_rules.gd")
 
-var maximum: float = MAXIMUM
-var value: float = MAXIMUM
-var block_cost: float = BLOCK_COST
-var duration: float = DRAIN_DURATION
-var recovery_duration: float = RECOVERY_DURATION
-var angle: float = GUARD_ARC
+var _rules: Dictionary = Rules.new().to_authority_config().guard
+var maximum: float = Rules.DEFAULT_GUARD_MAXIMUM
+var value: float = Rules.DEFAULT_GUARD_MAXIMUM
+var block_cost: float = Rules.DEFAULT_GUARD_BLOCK_COST
+var duration: float = Rules.DEFAULT_GUARD_DRAIN
+var recovery_duration: float = Rules.DEFAULT_GUARD_RECOVERY
+var angle: float = Rules.DEFAULT_GUARD_ARC
 var direction: Vector2 = Vector2.RIGHT
 var is_guarding: bool = false
 var hold_requested: bool = false
 var exhausted: bool = false
 var life_id: int = 1
 var revision: int = 0
+
+func configure(rules: Dictionary, next_life: int = life_id) -> void:
+	_rules = (rules if not rules.is_empty() else Rules.new().to_authority_config().guard).duplicate(true)
+	reset(next_life)
 
 func request(enabled: bool, facing: Vector2, alive: bool, current_life: int) -> bool:
 	if current_life != life_id or not alive:
@@ -96,12 +97,12 @@ func cancel() -> bool:
 
 func reset(next_life: int = life_id) -> void:
 	life_id = next_life
-	maximum = MAXIMUM
+	maximum = float(_rules.get("maximum", Rules.DEFAULT_GUARD_MAXIMUM))
 	value = maximum
-	block_cost = BLOCK_COST
-	duration = DRAIN_DURATION
-	recovery_duration = RECOVERY_DURATION
-	angle = GUARD_ARC
+	block_cost = float(_rules.get("block_cost", Rules.DEFAULT_GUARD_BLOCK_COST))
+	duration = float(_rules.get("duration", Rules.DEFAULT_GUARD_DRAIN))
+	recovery_duration = float(_rules.get("recovery_duration", Rules.DEFAULT_GUARD_RECOVERY))
+	angle = float(_rules.get("angle", Rules.DEFAULT_GUARD_ARC))
 	direction = Vector2.RIGHT
 	hold_requested = false
 	exhausted = false

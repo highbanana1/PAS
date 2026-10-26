@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="MeleeGuardRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scene/script/combat/melee_guard_rules.gd" id="1_rules"]
+
+[resource]
+script = ExtResource("1_rules")
+sword_damage = 2.0
+sword_range = 36.0
+sword_arc = 120.0
+sword_windup = 0.045
+sword_swing = 0.09
+sword_recovery = 0.11
+sword_cooldown = 0.245
+guard_maximum = 100.0
+guard_block_cost = 20.0
+guard_drain_duration = 10.0
+guard_recovery_duration = 15.0
+guard_arc = 140.0
