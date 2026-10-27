@@ -382,7 +382,7 @@ func get_movement_snapshots() -> Dictionary:
 		var full: Dictionary = get_snapshot(player_id)
 		if full.is_empty(): continue
 		var compact: Dictionary = {}
-		for field: String in ["player_id", "revision", "position", "velocity",
+		for field: String in ["player_id", "tick", "revision", "position", "velocity",
 				"dead", "extracted", "life_id", "ack_sequence", "respawn_remaining",
 				"health", "max_health"]:
 			compact[field] = full[field]

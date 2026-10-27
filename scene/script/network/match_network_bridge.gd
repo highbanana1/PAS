@@ -20,6 +20,7 @@ signal combat_state_changed(active: bool)
 
 const MatchAuthorityScript = preload("res://scene/script/network/match_authority.gd")
 const SnapshotReplicaScript = preload("res://scene/script/network/snapshot_replica.gd")
+const SnapshotChunkAssemblerScript = preload("res://scene/script/network/snapshot_chunk_assembler.gd")
 const ClientMotionViewScript = preload("res://scene/script/network/client_motion_view.gd")
 const NetworkPelletViewScript = preload("res://scene/script/network/pellet_view.gd")
 
@@ -29,6 +30,8 @@ const FIXED_STEP: float = 1.0 / 60.0
 const SNAPSHOT_INTERVAL: float = 1.0 / 20.0
 const MAX_CATCHUP_STEPS: int = 8
 const EPSILON: float = 0.000001
+## Leaves headroom below the observed 1392-byte ENet MTU for RPC framing.
+const SNAPSHOT_PACKET_BUDGET_BYTES: int = 1200
 
 var combat_replica = preload("res://scene/script/network/combat_replica.gd").new()
 var _sent_combat_revision: int = 0
@@ -39,6 +42,7 @@ signal combat_updated(state: Dictionary)
 var session
 var authority
 var replica
+var snapshot_assembler
 var client_view
 var pellet_view
 
@@ -59,6 +63,13 @@ var _physics_frames: int = 0
 var _snapshots_sent: int = 0
 var _last_snapshot_tick: int = -1
 var _last_snapshot_batch: Dictionary = {}
+var _last_snapshot_fragments: Array[Dictionary] = []
+var _snapshot_packet_count: int = 0
+var _snapshot_payload_bytes: int = 0
+var _snapshot_max_packet_bytes: int = 0
+var _combat_packet_count: int = 0
+var _combat_payload_bytes: int = 0
+var _combat_max_packet_bytes: int = 0
 var _submitted_commands: int = 0
 var _consumed_commands: int = 0
 var _authority_rejected_commands: int = 0
@@ -90,6 +101,7 @@ func configure(session_node: Node, authority_instance = null) -> bool:
 		session.combat_state_received.connect(_on_combat_packet)
 	_host_authority = bool(session.is_host())
 	replica = SnapshotReplicaScript.new()
+	snapshot_assembler = SnapshotChunkAssemblerScript.new()
 	if _host_authority:
 		if authority_instance != null:
 			authority = authority_instance
@@ -582,6 +594,23 @@ func get_last_applied_batch() -> Dictionary:
 func get_last_snapshot_batch() -> Dictionary:
 	return _last_snapshot_batch.duplicate(true)
 
+func get_last_snapshot_fragments() -> Array[Dictionary]:
+	return _last_snapshot_fragments.duplicate(true)
+
+## Serialization diagnostics are intentionally transport-neutral: callers can
+## record exact Variant payload bytes and send frequency without guessing from
+## field counts. ENet/RPC framing remains an additional runtime overhead.
+func get_network_metrics() -> Dictionary:
+	return {
+		"snapshot_batches": _snapshots_sent,
+		"snapshot_packets": _snapshot_packet_count,
+		"snapshot_payload_bytes": _snapshot_payload_bytes,
+		"snapshot_max_packet_bytes": _snapshot_max_packet_bytes,
+		"combat_packets": _combat_packet_count,
+		"combat_payload_bytes": _combat_payload_bytes,
+		"combat_max_packet_bytes": _combat_max_packet_bytes,
+	}
+
 func get_last_rejection() -> Dictionary:
 	return _last_rejection.duplicate(true)
 
@@ -620,6 +649,7 @@ func apply_baseline(baseline: Dictionary) -> Dictionary:
 	var result: Dictionary = replica.apply_baseline(baseline)
 	if not bool(result.get("applied", false)):
 		return _record_baseline_rejection(String(result.get("reason", "invalid_batch")), tick)
+	snapshot_assembler.reset()
 	combat_replica.apply_packet(baseline)
 	_last_baseline = baseline.duplicate(true)
 	_last_baseline_tick = int(result.get("tick", tick))
@@ -650,21 +680,34 @@ func apply_snapshot_batch(batch: Dictionary) -> Dictionary:
 		_last_rejection = closed.duplicate(true)
 		snapshot_rejected.emit(closed.duplicate(true))
 		return closed
-	var result: Dictionary = replica.apply_batch(batch)
+	var assembled: Dictionary = snapshot_assembler.push(batch)
+	if not bool(assembled.get("complete", false)):
+		var pending_reason := String(assembled.get("reason", "invalid_fragment"))
+		var pending := {"applied": false, "reason": pending_reason, "tick": tick,
+			"player_count": 0}
+		# Missing fragments are expected on an unreliable stream. They are not a
+		# replica rejection and never advance or mutate the visible world state.
+		if pending_reason == "fragment_pending":
+			return pending
+		_last_rejection = pending.duplicate(true)
+		snapshot_rejected.emit(pending.duplicate(true))
+		return pending
+	var complete_batch: Dictionary = assembled.get("batch", {})
+	var result: Dictionary = replica.apply_batch(complete_batch)
 	if not bool(result.get("applied", false)):
 		_last_rejection = result.duplicate(true)
 		snapshot_rejected.emit(result.duplicate(true))
 		return result
 	# Combat state arrives on its own reliable revision stream. A movement
 	# snapshot may omit it so high-frequency packets stay smaller.
-	if batch.has("combat"):
-		combat_replica.apply_packet(batch)
-	_last_applied_batch = batch.duplicate(true)
+	if complete_batch.has("combat"):
+		combat_replica.apply_packet(complete_batch)
+	_last_applied_batch = complete_batch.duplicate(true)
 	_last_applied_tick = int(result.get("tick", -1))
 	if client_view != null:
-		client_view.apply_snapshot(batch)
+		client_view.apply_snapshot(complete_batch)
 	_apply_all_replicas()
-	replicas_updated.emit(batch.duplicate(true))
+	replicas_updated.emit(complete_batch.duplicate(true))
 	return result
 
 func _record_baseline_rejection(reason: String, tick: int) -> Dictionary:
@@ -814,16 +857,60 @@ func _send_snapshot() -> void:
 	var players: Dictionary = authority.get_movement_snapshots()
 	if players.is_empty():
 		return
-	var batch := {
+	var batch: Dictionary = {
 		"match_epoch": session.get_match_epoch(),
 		"server_tick": authority.get_tick(),
 		"players": players,
 	}
-	if session.broadcast_snapshot_batch(batch) != OK:
-		return
+	var fragments := _fragment_snapshot_batch(batch)
+	if fragments.is_empty(): return
+	for fragment: Dictionary in fragments:
+		if session.broadcast_snapshot_batch(fragment) != OK:
+			return
+		var packet_bytes := var_to_bytes(fragment).size()
+		_snapshot_packet_count += 1
+		_snapshot_payload_bytes += packet_bytes
+		_snapshot_max_packet_bytes = maxi(_snapshot_max_packet_bytes, packet_bytes)
 	_snapshots_sent += 1
 	_last_snapshot_tick = int(batch["server_tick"])
 	_last_snapshot_batch = batch.duplicate(true)
+	_last_snapshot_fragments = fragments.duplicate(true)
+
+func _fragment_snapshot_batch(batch: Dictionary) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var players_variant: Variant = batch.get("players", null)
+	if not players_variant is Dictionary: return result
+	var players: Dictionary = players_variant
+	var ids: Array = players.keys()
+	ids.sort_custom(func(a: Variant, b: Variant) -> bool: return String(a) < String(b))
+	var chunks: Array[Dictionary] = []
+	var current: Dictionary = {}
+	for player_id: Variant in ids:
+		var candidate := current.duplicate(true)
+		candidate[player_id] = players[player_id]
+		var probe := _make_snapshot_fragment(batch, candidate, chunks.size(), ids.size(), players.size())
+		if not current.is_empty() and var_to_bytes(probe).size() > SNAPSHOT_PACKET_BUDGET_BYTES:
+			chunks.append(current)
+			current = {}
+			current[player_id] = players[player_id]
+		else:
+			current = candidate
+	if not current.is_empty(): chunks.append(current)
+	for index in range(chunks.size()):
+		result.append(_make_snapshot_fragment(batch, chunks[index], index,
+			chunks.size(), players.size()))
+	return result
+
+func _make_snapshot_fragment(batch: Dictionary, players: Dictionary, index: int,
+		count: int, player_count: int) -> Dictionary:
+	return {
+		"match_epoch": int(batch.get("match_epoch", -1)),
+		"server_tick": int(batch.get("server_tick", -1)),
+		"snapshot_chunk_index": index,
+		"snapshot_chunk_count": count,
+		"snapshot_player_count": player_count,
+		"players": players.duplicate(true),
+	}
 
 func _on_snapshot_batch_received(batch: Dictionary) -> void:
 	apply_snapshot_batch(batch)
@@ -879,6 +966,8 @@ func _on_session_closed() -> void:
 	_pending_baseline_peers.clear()
 	if replica != null:
 		replica.deactivate()
+	if snapshot_assembler != null:
+		snapshot_assembler.reset()
 	if client_view != null:
 		client_view.deactivate("session_closed")
 	# Fall back to the last authoritative replica before releasing the actors,
@@ -1009,6 +1098,10 @@ func _send_combat() -> void:
 	_sent_combat_revision = int(state.revision)
 	var packet := {"match_epoch": session.get_match_epoch(), "server_tick": authority.get_tick(),
 		"combat": state, "players": authority.get_snapshots()}
+	var packet_bytes := var_to_bytes(packet).size()
+	_combat_packet_count += 1
+	_combat_payload_bytes += packet_bytes
+	_combat_max_packet_bytes = maxi(_combat_max_packet_bytes, packet_bytes)
 	session.broadcast_combat_state(packet)
 	combat_updated.emit(state.duplicate(true))
 
