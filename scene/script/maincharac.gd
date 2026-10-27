@@ -110,6 +110,7 @@ var network_authority: bool = false
 ## True only for the host-side simulation actor. Remote replicas must never
 ## decide contact damage, while the host must keep the existing contact rules.
 var network_simulation_authority: bool = false
+var _extracted: bool = false
 var _authority_item_signature: String = ""
 ## Replica presentation dedupe. The presenter only reacts to a strictly newer
 ## life or a changed dead flag on the current life, so duplicate/out-of-order
@@ -304,6 +305,7 @@ func set_network_authority(enabled: bool, simulation_authority: bool = false) ->
 		_item_input.reset_state()
 		_health_items.cancel_use()
 	else:
+		set_extracted(false)
 		clear_network_intents()
 		_reset_replica_presentation()
 
@@ -330,6 +332,8 @@ func apply_replica_state(state: Dictionary) -> bool:
 	var life := int(state.get("life_id", _replica_life_id))
 	if _replica_initialized and life < _replica_life_id:
 		return false
+	if state.has("extracted"):
+		set_extracted(bool(state["extracted"]))
 	var dead := bool(state.get("dead", _replica_dead))
 	_applying_replica = true
 	if state.has("position"):
@@ -371,6 +375,25 @@ func apply_replica_state(state: Dictionary) -> bool:
 		_lifecycle.set_authority_remaining(float(state["respawn_remaining"]))
 	_applying_replica = false
 	return true
+
+## Winning players stay in the scene as spectators, with their camera free to
+## show the ongoing match. They cannot collide or receive further combat hits.
+func set_extracted(enabled: bool) -> void:
+	if _extracted == enabled: return
+	_extracted = enabled
+	if enabled:
+		velocity = Vector2.ZERO
+		$WeaponController.suspend()
+		$gun.set_active(false)
+		$Sword.set_active(false)
+		collision_layer = 0
+		collision_mask = 0
+		$AnimatedSprite2D.visible = false
+	else:
+		collision_layer = 0 if is_dead else _alive_collision_layer
+		collision_mask = 0 if is_dead else _alive_collision_mask
+		$AnimatedSprite2D.visible = not is_dead
+		$WeaponController.refresh_equipped_weapon()
 
 func get_replica_presentation_counts() -> Dictionary:
 	return {
@@ -487,7 +510,7 @@ func _on_respawn_timer_timeout() -> void:
 	respawn(spawn_position)
 		
 func _physics_process(delta: float) -> void:
-	if is_dead or not is_locally_controlled:
+	if is_dead or _extracted or not is_locally_controlled:
 		return
 	if get_hit and hitcooltimer <= 0.0:
 		hitcooltimer = hit_invincibility_time

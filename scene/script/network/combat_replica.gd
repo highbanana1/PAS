@@ -51,6 +51,10 @@ func get_items() -> Dictionary:
 	var items_variant: Variant = _state.get("items", {})
 	return (items_variant as Dictionary).duplicate(true) if items_variant is Dictionary else {}
 
+func get_extraction() -> Dictionary:
+	var value: Variant = _state.get("extraction", {})
+	return (value as Dictionary).duplicate(true) if value is Dictionary else {}
+
 func get_item(item_id: int) -> Dictionary:
 	var items_variant: Variant = get_items().get("items", {})
 	if not items_variant is Dictionary:

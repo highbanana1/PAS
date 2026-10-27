@@ -11,6 +11,7 @@ const Rules = preload("res://scene/script/combat/melee_guard_rules.gd")
 var _shotgun = preload("res://scene/script/network/shotgun_authority.gd").new()
 var _melee = preload("res://scene/script/network/melee_authority.gd").new()
 var _items = preload("res://scene/script/network/item_authority.gd").new()
+var _extraction = preload("res://scene/script/network/extraction_authority.gd").new()
 var _guard_script = preload("res://scene/script/network/guard_authority.gd")
 
 var _players: Dictionary = {}
@@ -20,6 +21,7 @@ var _domain_revision: int = 0
 var _seen_shot_revision: int = 0
 var _seen_melee_revision: int = 0
 var _seen_item_revision: int = 0
+var _seen_extraction_revision: int = 0
 
 func register_player(player_id: StringName, actor: Node, config: Dictionary = {}) -> bool:
 	if player_id == &"" or not is_instance_valid(actor) or _players.has(player_id):
@@ -46,6 +48,7 @@ func register_player(player_id: StringName, actor: Node, config: Dictionary = {}
 		"last_sequence": -1,
 		"life_id": life_id,
 		"guard": guard,
+		"extracted": false,
 	}
 	if bool(record["dead"]):
 		record["respawn_remaining"] = _respawn_delay(actor)
@@ -59,6 +62,7 @@ func unregister_player(player_id: StringName) -> bool:
 	if not _players.has(player_id):
 		return false
 	var record: Dictionary = _players[player_id]
+	_extraction.release_player(player_id, _actor_position(record["actor"]) if is_instance_valid(record.get("actor")) else Vector2.ZERO)
 	_players.erase(player_id)
 	_melee.remove_player(player_id)
 	_clear_actions(record)
@@ -73,6 +77,59 @@ func _combat_config(actor: Node, registration: Dictionary) -> Dictionary:
 	if candidate is Dictionary:
 		return Rules.validated_config(candidate)
 	return Rules.new().to_authority_config()
+
+## Host map/setup API. The module stores only stable ids and value snapshots.
+func configure_extraction(seconds: float = 30.0) -> bool:
+	return _extraction.configure(seconds)
+
+func register_star(star_id: StringName, position: Vector2) -> bool:
+	var accepted: bool = _extraction.register_star(star_id, position)
+	if accepted: _touch_domain()
+	return accepted
+
+func register_extraction_point(point_id: StringName, position: Vector2,
+		radius: float = 48.0) -> bool:
+	var accepted: bool = _extraction.register_point(point_id, position, radius)
+	if accepted: _touch_domain()
+	return accepted
+
+func get_extraction_state() -> Dictionary:
+	return _extraction.get_state()
+
+func _extraction_players() -> Dictionary:
+	var players: Dictionary = {}
+	for player_id: StringName in _players:
+		var record: Dictionary = _players[player_id]
+		var actor: Variant = record.get("actor")
+		if not is_instance_valid(actor):
+			continue
+		players[player_id] = {
+			"position": _actor_position(actor),
+			"alive": actor.get("is_dead") != true and not bool(record["dead"]),
+			"spectating": bool(record["extracted"]),
+			"life_id": int(record["life_id"]),
+		}
+	return players
+
+func _complete_extraction(player_id: StringName) -> void:
+	if not _players.has(player_id): return
+	var record: Dictionary = _players[player_id]
+	if bool(record["extracted"]): return
+	record["extracted"] = true
+	_clear_actions(record)
+	record["move_input"] = Vector2.ZERO
+	record["guard"].cancel()
+	_melee.reset_player(player_id, int(record["life_id"]))
+	_shotgun.cancel_player(player_id)
+	var actor: Node = record["actor"]
+	if is_instance_valid(actor):
+		if actor.has_method("set_extracted"):
+			actor.set_extracted(true)
+		elif actor is CollisionObject2D:
+			(actor as CollisionObject2D).collision_layer = 0
+			(actor as CollisionObject2D).collision_mask = 0
+	_touch_domain()
+	_emit_event("player_extracted", record, {})
 
 ## sequence is the NetworkSession envelope sequence when present. It is echoed
 ## in snapshots as ack_sequence so a client can drop exactly the confirmed
@@ -143,6 +200,26 @@ func submit_command(player_id: StringName, command: Dictionary, sequence: int = 
 				_acknowledge(record, sequence)
 				return true
 			return false
+		&"star_pickup":
+			if not _accepts_actions(record): return false
+			var star_id := StringName(String(command.get("star_id", "")))
+			var accepted_star: bool = _extraction.request_pickup(
+				player_id, star_id, int(command.get("expected_revision", -1)),
+				_extraction_players().get(player_id, {}))
+			if accepted_star:
+				_touch_domain()
+				_acknowledge(record, sequence)
+			return accepted_star
+		&"deliver_star":
+			if not _accepts_actions(record): return false
+			var point_id := StringName(String(command.get("point_id", "")))
+			var accepted_delivery: bool = _extraction.request_delivery(
+				player_id, point_id, int(command.get("expected_revision", -1)),
+				_extraction_players().get(player_id, {}), _tick)
+			if accepted_delivery:
+				_touch_domain()
+				_acknowledge(record, sequence)
+			return accepted_delivery
 		&"use_item":
 			if not _accepts_actions(record):
 				return false
@@ -162,6 +239,7 @@ func submit_command(player_id: StringName, command: Dictionary, sequence: int = 
 				return true
 			return false
 		&"move":
+			if not _accepts_actions(record): return false
 			record["move_input"] = _requested_direction(command, record["move_input"])
 			_acknowledge(record, sequence)
 			return true
@@ -191,12 +269,18 @@ func _acknowledge(record: Dictionary, sequence: int) -> void:
 
 func step() -> void:
 	_tick += 1
+	# Complete a deadline against the previous stable position and life before
+	# this tick's movement or lethal attacks. This defines the same-tick tie.
+	for winner: StringName in _extraction.step(_tick, _extraction_players()):
+		_complete_extraction(winner)
 	for player_id: StringName in _players.keys():
 		_step_player(_players[player_id])
 	# All actors moved for this tick before melee and pellets resolve. Deaths
 	# caused by weapon damage are observed by the lifecycle on the next tick.
 	_melee.step(_tick, _players)
 	_shotgun.step(_tick, _players)
+	# Post-combat pass only cancels bindings or drops on death; never awards wins.
+	_extraction.reconcile(_extraction_players())
 	_sync_domain_revisions()
 
 func get_tick() -> int:
@@ -238,6 +322,8 @@ func get_snapshot(player_id: StringName) -> Dictionary:
 		"can_dash": motor.can_dash,
 		"jump_count": motor.jump_count,
 		"dead": actor.get("is_dead") == true,
+		"extracted": bool(record["extracted"]),
+		"spectating": bool(record["extracted"]),
 		"health": _actor_health(actor, "real_hp"),
 		"max_health": _actor_health(actor, "max_hp"),
 		"respawn_remaining": float(record["respawn_remaining"]),
@@ -278,6 +364,8 @@ func grant_item(player_id: StringName, item_type: Variant, remaining: float, cap
 	return item_id
 
 func _step_player(record: Dictionary) -> void:
+	if bool(record["extracted"]):
+		return
 	if not is_instance_valid(record.get("actor")):
 		_clear_actions(record)
 		return
@@ -347,6 +435,7 @@ func _step_dead(record: Dictionary, actor: Node) -> void:
 		})
 
 func _accepts_actions(record: Dictionary) -> bool:
+	if bool(record["extracted"]): return false
 	if is_instance_valid(record.get("actor")) and not bool(record["dead"]):
 		var actor: Node = record["actor"]
 		if actor.get("is_dead") != true:
@@ -435,6 +524,10 @@ func _sync_domain_revisions() -> void:
 	if int(_items.revision) != _seen_item_revision:
 		_seen_item_revision = int(_items.revision)
 		_touch_domain()
+	var extraction_revision: int = int(_extraction.get_state().get("revision", 0))
+	if extraction_revision != _seen_extraction_revision:
+		_seen_extraction_revision = extraction_revision
+		_touch_domain()
 
 func get_combat_state() -> Dictionary:
 	var shotgun_state: Dictionary = _shotgun.get_state()
@@ -455,4 +548,5 @@ func get_combat_state() -> Dictionary:
 		"pending_swords": int(melee_state.get("pending_actions", 0)),
 		"guards": guards,
 		"items": _items.get_state(),
+		"extraction": _extraction.get_state(),
 	}

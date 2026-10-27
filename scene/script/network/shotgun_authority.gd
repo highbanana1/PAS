@@ -7,6 +7,18 @@ const LIFETIME := 180
 const COOLDOWN := 39
 var _pellets: Array[Dictionary] = []
 var _pending: Array[Dictionary] = []
+
+## A completed evacuee leaves combat immediately, including shots submitted
+## earlier in the same authority tick and pellets still in flight.
+func cancel_player(player_id: StringName) -> void:
+	var remaining_requests: Array[Dictionary] = []
+	for request: Dictionary in _pending:
+		if StringName(String(request.get("player_id", ""))) != player_id:
+			remaining_requests.append(request)
+	_pending = remaining_requests
+	for index in range(_pellets.size() - 1, -1, -1):
+		if StringName(String(_pellets[index].get("player_id", ""))) == player_id:
+			_remove(index, "extracted")
 var _next_fire: Dictionary = {}
 var _events: Array[Dictionary] = []
 var _shot_id: int = 0
@@ -35,7 +47,8 @@ func step(tick: int, players: Dictionary) -> void:
 	_tick = tick
 	for request: Dictionary in _pending:
 		var actor: Node2D = request.actor
-		if not is_instance_valid(actor) or actor.get("is_dead") == true:
+		if not is_instance_valid(actor) or actor.get("is_dead") == true \
+				or bool(players.get(StringName(request.player_id), {}).get("extracted", false)):
 			continue
 		_shot_id += 1
 		var first_pellet_index := _pellets.size()
@@ -102,7 +115,8 @@ func _resolve_hit(index: int, hit: Dictionary, players: Dictionary, shooter: Nod
 	var result := Context.Result.IGNORED
 	var target_id := ""
 	for player_id: StringName in players:
-		if players[player_id].get("actor") == target:
+		if players[player_id].get("actor") == target \
+				and not bool(players[player_id].get("extracted", false)):
 			target_id = String(player_id)
 			break
 	if not target_id.is_empty() and target is Node2D:

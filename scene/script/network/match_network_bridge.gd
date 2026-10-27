@@ -46,6 +46,8 @@ var _configured: bool = false
 var _host_authority: bool = false
 var _local_player_id: StringName = &""
 var _actors: Dictionary = {}
+var _world_star_nodes: Dictionary = {}
+var _world_point_nodes: Dictionary = {}
 var _step_accumulator: float = 0.0
 var _snapshot_accumulator: float = 0.0
 var _authority_steps: int = 0
@@ -112,6 +114,8 @@ func configure(session_node: Node, authority_instance = null) -> bool:
 	if not session.session_closed.is_connected(_on_session_closed):
 		session.session_closed.connect(_on_session_closed)
 	_configured = true
+	if is_inside_tree() and get_tree().current_scene != null:
+		bind_world(get_tree().current_scene)
 	pellet_view = NetworkPelletViewScript.new()
 	pellet_view.name = "NetworkPelletView"
 	add_child(pellet_view)
@@ -133,6 +137,70 @@ func get_pellet_view():
 
 func get_local_player_id() -> StringName:
 	return _local_player_id
+
+## Stable map ids are registered once by the host; clients use the same ids
+## only to place the visible star from the authoritative checkpoint.
+func bind_world(map: Node) -> void:
+	if not is_instance_valid(map): return
+	for node in map.find_children("*", "Area2D", true, false):
+		if node.is_in_group("network_star"):
+			var star_id := StringName(String(node.get("network_entity_id")))
+			if star_id == &"": star_id = StringName(String(map.get_path_to(node)))
+			_world_star_nodes[String(star_id)] = node
+			if node.has_method("set_network_controlled"): node.set_network_controlled(true)
+			if _host_authority: authority.register_star(star_id, node.global_position)
+		elif node.is_in_group("table"):
+			var point_id := StringName(String(node.get("network_entity_id")))
+			if point_id == &"": point_id = StringName(String(map.get_path_to(node)))
+			_world_point_nodes[String(point_id)] = node
+			if node.has_method("set_network_controlled"): node.set_network_controlled(true)
+			if _host_authority:
+				authority.register_extraction_point(point_id, node.global_position,
+					float(node.get("extraction_radius")))
+	_apply_world_extraction()
+
+func _apply_world_extraction() -> void:
+	if _world_star_nodes.is_empty(): return
+	var stars: Dictionary = get_extraction_state().get("stars", {})
+	for id: String in _world_star_nodes:
+		var node: Node = _world_star_nodes[id]
+		if not is_instance_valid(node) or not node.has_method("apply_network_star"): continue
+		var star: Dictionary = stars.get(id, {})
+		var carrier: Node2D = _actors.get(String(star.get("owner", ""))) as Node2D
+		node.apply_network_star(star, carrier)
+
+func _auto_world_extraction() -> void:
+	if not _host_authority or authority == null: return
+	for player_id: StringName in authority.get_player_ids():
+		var actor: Node2D = _actors.get(String(player_id)) as Node2D
+		if not is_instance_valid(actor): continue
+		var player_state: Dictionary = authority.get_snapshot(player_id)
+		if bool(player_state.get("dead", true)) or bool(player_state.get("extracted", false)):
+			continue
+		var state: Dictionary = authority.get_extraction_state()
+		for id: String in _world_star_nodes:
+			var star: Dictionary = state.get("stars", {}).get(id, {})
+			if String(star.get("state", "")) != "FREE": continue
+			var position: Variant = star.get("position")
+			if position is Vector2 and actor.global_position.distance_to(position) <= 40.0:
+				authority.submit_command(player_id, {"type": "star_pickup", "star_id": id,
+					"expected_revision": int(star.get("revision", -1))})
+				break
+		state = authority.get_extraction_state()
+		var held: Dictionary = {}
+		for star_variant: Variant in state.get("stars", {}).values():
+			if star_variant is Dictionary and String(star_variant.get("owner", "")) == String(player_id) \
+					and String(star_variant.get("state", "")) == "CARRIED":
+				held = star_variant
+				break
+		if held.is_empty(): continue
+		for id: String in _world_point_nodes:
+			var point: Dictionary = state.get("points", {}).get(id, {})
+			var position: Variant = point.get("position")
+			if position is Vector2 and actor.global_position.distance_to(position) <= float(point.get("radius", 0.0)):
+				if authority.submit_command(player_id, {"type": "deliver_star", "point_id": id,
+					"expected_revision": int(held.get("revision", -1))}):
+					break
 
 func is_combat_active() -> bool:
 	return _combat_active and not _session_closed
@@ -186,6 +254,11 @@ func get_baseline_rejected_count(reason: String) -> int:
 func submit_command(command: Dictionary) -> int:
 	if not can_submit_command() or command.is_empty():
 		return -1
+	if _local_player_id != &"":
+		var local_state: Dictionary = authority.get_snapshot(_local_player_id) if _host_authority \
+			else combat_replica.get_player(String(_local_player_id))
+		if bool(local_state.get("extracted", false)):
+			return -1
 	var sequence := int(session.send_command(command))
 	if sequence > 0:
 		_submitted_commands += 1
@@ -223,6 +296,49 @@ func submit_pickup(item_id: int, expected_revision: int = -1) -> int:
 		return -1
 	return submit_command({"type": "pickup", "item_id": item_id,
 		"expected_revision": revision})
+
+func get_extraction_state() -> Dictionary:
+	if _session_closed: return {}
+	if _host_authority:
+		return authority.get_extraction_state() if authority != null else {}
+	return combat_replica.get_extraction()
+
+func get_star(star_id: StringName) -> Dictionary:
+	return get_extraction_state().get("stars", {}).get(String(star_id), {})
+
+func submit_star_pickup(star_id: StringName, expected_revision: int = -1) -> int:
+	var revision := expected_revision
+	if revision < 0: revision = int(get_star(star_id).get("revision", -1))
+	if revision <= 0: return -1
+	return submit_command({"type": "star_pickup", "star_id": String(star_id),
+		"expected_revision": revision})
+
+func submit_star_delivery(point_id: StringName, expected_revision: int = -1) -> int:
+	var revision := expected_revision
+	if revision < 0:
+		var stars: Dictionary = get_extraction_state().get("stars", {})
+		for star_variant: Variant in stars.values():
+			if not star_variant is Dictionary: continue
+			var star: Dictionary = star_variant
+			if String(star.get("owner", "")) == String(_local_player_id) \
+					and String(star.get("state", "")) == "CARRIED":
+				revision = int(star.get("revision", -1))
+				break
+	if revision <= 0: return -1
+	return submit_command({"type": "deliver_star", "point_id": String(point_id),
+		"expected_revision": revision})
+
+## Map setup remains host-owned. Clients discover entities from checkpoints.
+func configure_extraction(seconds: float = 30.0) -> bool:
+	return _host_authority and authority != null and authority.configure_extraction(seconds)
+
+func register_star(star_id: StringName, position: Vector2) -> bool:
+	return _host_authority and authority != null and authority.register_star(star_id, position)
+
+func register_extraction_point(point_id: StringName, position: Vector2,
+		radius: float = 48.0) -> bool:
+	return _host_authority and authority != null \
+		and authority.register_extraction_point(point_id, position, radius)
 
 func submit_use_item(item_id: int, mode: String, expected_revision: int = -1,
 		amount: float = 0.0) -> int:
@@ -553,6 +669,8 @@ func _step_authority(delta: float) -> void:
 		authority.step()
 		_drain_authority_lifecycle()
 		_apply_authority_domain()
+		_auto_world_extraction()
+		_apply_world_extraction()
 		_send_combat()
 		_authority_steps += 1
 		# A late joiner is seeded from exactly this authority tick, after the
@@ -697,6 +815,11 @@ func _on_session_closed() -> void:
 	combat_replica.clear()
 	_pending_combat_packet.clear()
 	_combat_active = false
+	for node_variant: Variant in _world_star_nodes.values() + _world_point_nodes.values():
+		if is_instance_valid(node_variant) and node_variant.has_method("set_network_controlled"):
+			node_variant.set_network_controlled(false)
+	_world_star_nodes.clear()
+	_world_point_nodes.clear()
 	_pending_baseline_peers.clear()
 	if replica != null:
 		replica.deactivate()
@@ -757,6 +880,8 @@ func _apply_all_replicas() -> void:
 			state["health"] = combat_player.get("health", state.get("health", 0.0))
 			state["dead"] = combat_player.get("dead", state.get("dead", false))
 			state["life_id"] = combat_player.get("life_id", state.get("life_id", 0))
+			state["extracted"] = combat_player.get("extracted", state.get("extracted", false))
+			state["spectating"] = combat_player.get("spectating", state.get("spectating", false))
 		_apply_state_to_actor(_actors[key], state)
 		if not _host_authority:
 			var guard: Dictionary = combat_replica.get_guard(StringName(key))
@@ -764,6 +889,7 @@ func _apply_all_replicas() -> void:
 				_actors[key].apply_authoritative_guard(guard)
 			if _actors[key].has_method("apply_authoritative_items"):
 				_actors[key].apply_authoritative_items(combat_replica.get_item_inventory(StringName(key)))
+	_apply_world_extraction()
 
 func _apply_replica_state(player_id: String) -> void:
 	if replica == null:

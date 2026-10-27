@@ -251,7 +251,8 @@ func _targets(attacker: Node2D, direction: Vector2, players: Dictionary, attacke
 		if String(player_id) == attacker_id:
 			continue
 		var actor: Node2D = record.get("actor")
-		if not is_instance_valid(actor) or actor.get("is_dead") == true or bool(record.get("dead", false)):
+		if not is_instance_valid(actor) or actor.get("is_dead") == true \
+				or bool(record.get("dead", false)) or bool(record.get("extracted", false)):
 			continue
 		if int(record.get("life_id", 0)) <= 0:
 			continue
