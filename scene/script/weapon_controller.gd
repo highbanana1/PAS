@@ -2,6 +2,7 @@ extends Node
 const Guard = preload("res://scene/script/components/guard_component.gd")
 const LocalInput = preload("res://scene/script/components/local_combat_input.gd")
 const Context = preload("res://scene/script/combat/attack_context.gd")
+const Rules = preload("res://scene/script/combat/melee_guard_rules.gd")
 signal attack_resolved(target: Node2D, result: int)
 signal weapon_changed(weapon: int)
 signal guard_changed(value: float, maximum: float)
@@ -10,21 +11,26 @@ var actor: Node2D
 var _guard = Guard.new()
 var _input = LocalInput.new()
 var _weapons: Dictionary = {}
+## Network-bound actors receive guard state and combat commands from the host
+## bridge. This flag is never set by the offline adapter.
+var network_authority: bool = false
 var current_weapon: int = Weapon.GUN
 var aim_direction: Vector2 = Vector2.RIGHT
-@export var max_guard: float = 100.0:
+@export var combat_rules: Resource = Rules.new()
+var _combat_config: Dictionary = {}
+var max_guard: float:
 	get: return _guard.maximum
 	set(value): _guard.maximum = value
-@export var block_cost: float = 20.0:
+var block_cost: float:
 	get: return _guard.block_cost
 	set(value): _guard.block_cost = value
-@export var guard_duration: float = 10.0:
+var guard_duration: float:
 	get: return _guard.duration
 	set(value): _guard.duration = value
-@export var guard_recovery_duration: float = 15.0:
+var guard_recovery_duration: float:
 	get: return _guard.recovery_duration
 	set(value): _guard.recovery_duration = value
-@export var guard_angle: float = 140.0:
+var guard_angle: float:
 	get: return _guard.angle
 	set(value): _guard.angle = value
 var guard_value: float:
@@ -41,7 +47,8 @@ func _init() -> void:
 
 func configure(owner_actor: Node2D) -> void:
 	actor = owner_actor
-	_guard.configure(actor)
+	_combat_config = _rules().to_authority_config()
+	_guard.configure(actor, _combat_config.guard)
 	_input.configure(actor, self)
 	if not _guard.changed.is_connected(_on_guard_changed):
 		_guard.changed.connect(_on_guard_changed)
@@ -49,6 +56,18 @@ func configure(owner_actor: Node2D) -> void:
 
 func get_guard_component() -> Node:
 	return _guard
+
+## Host-only registration seam. MatchAuthority takes a deep value snapshot;
+## the Resource itself never crosses the network command interface.
+func get_authority_combat_config() -> Dictionary:
+	if _combat_config.is_empty():
+		_combat_config = _rules().to_authority_config()
+	return _combat_config.duplicate(true)
+
+func _rules() -> Resource:
+	if combat_rules == null or not combat_rules.has_method("to_authority_config"):
+		combat_rules = Rules.new()
+	return combat_rules
 
 func register_weapon(id: int, weapon: Node2D) -> void:
 	assert(is_instance_valid(actor), "Configure the weapon owner before registration")
@@ -58,6 +77,8 @@ func register_weapon(id: int, weapon: Node2D) -> void:
 		previous.set_active(false)
 		if previous.attack_resolved.is_connected(_on_attack_resolved): previous.attack_resolved.disconnect(_on_attack_resolved)
 	_weapons[id] = weapon
+	if id == Weapon.SWORD and weapon.has_method("apply_combat_rules"):
+		weapon.apply_combat_rules(_combat_config.get("sword", {}))
 	weapon.configure(actor, self)
 	if not weapon.attack_resolved.is_connected(_on_attack_resolved): weapon.attack_resolved.connect(_on_attack_resolved)
 	weapon.aim(aim_direction)
@@ -127,7 +148,10 @@ func try_block(attack_origin: Vector2) -> bool:
 	return _guard.try_block(Context.new(1.0, attack_origin))
 
 func recover_guard(delta: float) -> void:
-	# Compatibility entry point; only the adapter polls local Input.
+	# Compatibility entry point; only the adapter polls local Input. Network
+	# actors take guard timing from the authoritative checkpoint instead.
+	if network_authority:
+		return
 	if _input.enabled(): _guard.hold_requested = _input.is_guard_requested()
 	_guard.tick(delta)
 
@@ -163,3 +187,29 @@ func reset_after_respawn() -> void:
 	for weapon in _weapons.values():
 		if is_instance_valid(weapon): weapon.reset_state()
 	refresh_equipped_weapon()
+
+## Called only when MatchNetworkBridge binds this actor to an authoritative
+## match. Local guard/attack sampling is suspended; authority checkpoints drive
+## the guard component instead.
+func set_network_authority(enabled: bool) -> void:
+	network_authority = enabled
+	# Input sampling stays active in both modes: offline it drives the local
+	# controller, network it submits intents through the bridge.
+	_input.set_process(true)
+	if enabled:
+		_guard.request_guard(false)
+		for weapon in _weapons.values():
+			if is_instance_valid(weapon): weapon.cancel_attack()
+	refresh_equipped_weapon()
+
+func bind_network_intents(bridge: Node, player_id: StringName) -> bool:
+	return _input.bind_network_intents(bridge, player_id)
+
+func clear_network_intents() -> void:
+	_input.clear_network_intents()
+
+func apply_authoritative_guard(state: Dictionary) -> void:
+	if not network_authority:
+		return
+	_guard.apply_authority_state(state)
+	_update_guard_visual()

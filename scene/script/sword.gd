@@ -1,14 +1,15 @@
 extends "res://scene/script/weapons/weapon_base.gd"
 const Context = preload("res://scene/script/combat/attack_context.gd")
 const Receiver = preload("res://scene/script/combat/combat_receiver.gd")
+const Rules = preload("res://scene/script/combat/melee_guard_rules.gd")
 
-@export var damage: int = 2
-@export var attack_range: float = 36.0
-@export_range(10.0, 170.0) var swing_angle: float = 120.0
-@export var windup_duration: float = 0.045
-@export var swing_duration: float = 0.09
-@export var recovery_duration: float = 0.11
-@export var attack_cooldown: float = 0.245
+var damage: float = Rules.DEFAULT_SWORD_DAMAGE
+var attack_range: float = Rules.DEFAULT_SWORD_RANGE
+var swing_angle: float = Rules.DEFAULT_SWORD_ARC
+var windup_duration: float = Rules.DEFAULT_SWORD_WINDUP
+var swing_duration: float = Rules.DEFAULT_SWORD_SWING
+var recovery_duration: float = Rules.DEFAULT_SWORD_RECOVERY
+var attack_cooldown: float = Rules.DEFAULT_SWORD_COOLDOWN
 @export var guard_forward_offset: float = 8.0
 
 var is_swinging: bool = false
@@ -22,6 +23,15 @@ var _guard_direction: Vector2 = Vector2.RIGHT
 @onready var _sprite_rest_position: Vector2 = _sprite.position
 func _init() -> void:
 	supports_guard = true
+
+func apply_combat_rules(rules: Dictionary) -> void:
+	damage = float(rules.get("damage", damage))
+	attack_range = float(rules.get("range", attack_range))
+	swing_angle = float(rules.get("arc", swing_angle))
+	windup_duration = float(rules.get("windup", windup_duration))
+	swing_duration = float(rules.get("swing", swing_duration))
+	recovery_duration = float(rules.get("recovery", recovery_duration))
+	attack_cooldown = float(rules.get("cooldown", attack_cooldown))
 
 func attack(direction: Vector2) -> bool:
 	return start_swing(direction)
