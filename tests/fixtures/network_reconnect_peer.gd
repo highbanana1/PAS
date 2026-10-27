@@ -62,6 +62,7 @@ func run() -> void:
 		"initial": await run_initial()
 		"intruder": await run_intruder()
 		"stale": await run_stale()
+		"replacement": await run_replacement()
 		"resume": await run_resume()
 		_: quit(1)
 
@@ -121,9 +122,12 @@ func run_host_expiry() -> void:
 	bridge.register_extraction_point(&"point", Vector2(20, 10))
 	var item_ids: Array[int] = []
 	var expired_ids: Array[String] = []
+	var joined_ids: Array[String] = []
 	session.player_joined.connect(func(_peer: int, player_id: String) -> void:
+		joined_ids.append(player_id)
 		var id := StringName(player_id)
 		bridge.bind_actor(id, make_actor())
+		if joined_ids.size() > 1: return
 		item_ids.append(bridge.get_authority().grant_item(id, &"health", 30.0, 30.0))
 		bridge.get_authority().submit_command(id, {"type": "star_pickup",
 			"star_id": "star", "expected_revision": 1})
@@ -168,8 +172,22 @@ func run_host_expiry() -> void:
 			.get("star", {}).get("revision", -2)) == star_revision
 			and int(bridge.get_authority().get_item(item_ids[0]).get("revision", -2)) == item_revision,
 		"occupied": session.get_occupied_seat_count()})
+	var replacement_joined: bool = await wait_until(func() -> bool:
+		return not read("replacement_final.json").is_empty(), 9000)
+	var replacement_id: String = joined_ids[1] if joined_ids.size() > 1 else ""
+	var replacement_peer: int = session.get_peer_id_for_player(StringName(replacement_id))
+	var replacement_identity: Dictionary = session.get_identity_for_peer(replacement_peer)
+	write("replacement_host_final.json", {"joined": replacement_joined,
+		"old_player_id": String(player_id), "new_player_id": replacement_id,
+		"new_seat": int(replacement_identity.get("seat", -1)),
+		"old_actor_absent": not bridge.get_authority().get_player_ids().has(player_id),
+		"new_actor_bound": is_instance_valid(bridge.get_bound_actor(StringName(replacement_id))),
+		"occupied": session.get_occupied_seat_count(),
+		"old_drop_unchanged": int(bridge.get_authority().get_extraction_state().get("stars", {})
+			.get("star", {}).get("revision", -2)) == star_revision
+			and int(bridge.get_authority().get_item(item_ids[0]).get("revision", -2)) == item_revision})
 	session.stop()
-	quit(0 if expired else 1)
+	quit(0 if expired and replacement_joined else 1)
 
 func run_stale() -> void:
 	var old_identity: Dictionary = read("first.json").get("identity", {})
@@ -184,6 +202,26 @@ func run_stale() -> void:
 		"no_identity": session.get_local_identity().is_empty()})
 	if session.is_active(): session.stop()
 	quit(0 if rejected else 1)
+
+func run_replacement() -> void:
+	var port := int(read("ready.json").get("port", 0))
+	if session.join("127.0.0.1", port) != OK or not bridge.configure(session):
+		write("replacement_error.json", {"error": "join_failed"}); quit(1); return
+	var ready: bool = await wait_until(func() -> bool:
+		return not session.get_local_identity().is_empty() and bridge.has_baseline())
+	if not ready:
+		write("replacement_error.json", {"error": "baseline_missing"}); quit(1); return
+	var identity: Dictionary = session.get_local_identity()
+	var old_id := String(read("first.json").get("identity", {}).get("player_id", ""))
+	var new_id := String(identity.get("player_id", ""))
+	var players: Dictionary = bridge.get_last_baseline().get("players", {})
+	write("replacement_final.json", {"player_id": new_id,
+		"seat": int(identity.get("seat", -1)),
+		"baseline_has_new": players.has(new_id),
+		"baseline_excludes_old": not players.has(old_id)})
+	await wait_until(func() -> bool: return not read("replacement_host_final.json").is_empty(), 2000)
+	session.stop()
+	quit(0)
 
 func run_intruder() -> void:
 	var first: Dictionary = read("first.json")

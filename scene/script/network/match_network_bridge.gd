@@ -49,6 +49,9 @@ var _actors: Dictionary = {}
 var _seen_replica_players: Dictionary = {}
 var _world_star_nodes: Dictionary = {}
 var _world_point_nodes: Dictionary = {}
+## A PvP scene freezes the opening roster before selecting its map stars.
+## Existing scenes keep automatic binding unless they opt into that flow.
+var auto_bind_world: bool = true
 var _step_accumulator: float = 0.0
 var _snapshot_accumulator: float = 0.0
 var _authority_steps: int = 0
@@ -120,7 +123,7 @@ func configure(session_node: Node, authority_instance = null) -> bool:
 	if not session.session_closed.is_connected(_on_session_closed):
 		session.session_closed.connect(_on_session_closed)
 	_configured = true
-	if is_inside_tree() and get_tree().current_scene != null:
+	if auto_bind_world and is_inside_tree() and get_tree().current_scene != null:
 		bind_world(get_tree().current_scene)
 	pellet_view = NetworkPelletViewScript.new()
 	pellet_view.name = "NetworkPelletView"
@@ -146,15 +149,18 @@ func get_local_player_id() -> StringName:
 
 ## Stable map ids are registered once by the host; clients use the same ids
 ## only to place the visible star from the authoritative checkpoint.
-func bind_world(map: Node) -> void:
+func bind_world(map: Node, star_limit: int = -1) -> void:
 	if not is_instance_valid(map): return
+	var registered_stars := 0
 	for node in map.find_children("*", "Area2D", true, false):
 		if node.is_in_group("network_star"):
 			var star_id := StringName(String(node.get("network_entity_id")))
 			if star_id == &"": star_id = StringName(String(map.get_path_to(node)))
 			_world_star_nodes[String(star_id)] = node
 			if node.has_method("set_network_controlled"): node.set_network_controlled(true)
-			if _host_authority: authority.register_star(star_id, node.global_position)
+			if _host_authority and (star_limit < 0 or registered_stars < star_limit):
+				if authority.register_star(star_id, node.global_position):
+					registered_stars += 1
 		elif node.is_in_group("table"):
 			var point_id := StringName(String(node.get("network_entity_id")))
 			if point_id == &"": point_id = StringName(String(map.get_path_to(node)))
@@ -177,6 +183,8 @@ func _apply_world_extraction() -> void:
 
 func _auto_world_extraction() -> void:
 	if not _host_authority or authority == null: return
+	if not auto_bind_world and String(authority.get_match_state().get("phase", "waiting")) != "running":
+		return
 	for player_id: StringName in authority.get_player_ids():
 		var actor: Node2D = _actors.get(String(player_id)) as Node2D
 		if not is_instance_valid(actor): continue
@@ -219,6 +227,8 @@ func can_submit_command() -> bool:
 	if not _configured or session == null or _session_closed:
 		return false
 	if not session.is_active():
+		return false
+	if not auto_bind_world and String(get_match_state().get("phase", "waiting")) != "running":
 		return false
 	if _host_authority:
 		return true
@@ -309,6 +319,15 @@ func get_extraction_state() -> Dictionary:
 	if _host_authority:
 		return authority.get_extraction_state() if authority != null else {}
 	return combat_replica.get_extraction()
+
+func get_match_state() -> Dictionary:
+	if _session_closed: return {}
+	if _host_authority:
+		return authority.get_match_state() if authority != null else {}
+	return combat_replica.get_match()
+
+func start_match(duration_ticks: int = 36000) -> bool:
+	return _host_authority and authority != null and authority.start_match(duration_ticks)
 
 func get_star(star_id: StringName) -> Dictionary:
 	return get_extraction_state().get("stars", {}).get(String(star_id), {})
@@ -636,7 +655,10 @@ func apply_snapshot_batch(batch: Dictionary) -> Dictionary:
 		_last_rejection = result.duplicate(true)
 		snapshot_rejected.emit(result.duplicate(true))
 		return result
-	combat_replica.apply_packet(batch)
+	# Combat state arrives on its own reliable revision stream. A movement
+	# snapshot may omit it so high-frequency packets stay smaller.
+	if batch.has("combat"):
+		combat_replica.apply_packet(batch)
 	_last_applied_batch = batch.duplicate(true)
 	_last_applied_tick = int(result.get("tick", -1))
 	if client_view != null:
@@ -676,6 +698,8 @@ func _step_authority(delta: float) -> void:
 			session.expire_reserved_players()
 		_consume_commands()
 		authority.step()
+		if not auto_bind_world and bool(authority.get_match_state().get("ended", false)):
+			session.set_fresh_joins_allowed(false)
 		_drain_authority_lifecycle()
 		_apply_authority_domain()
 		_auto_world_extraction()
@@ -726,6 +750,8 @@ func _apply_authority_domain_actor(key: String, actor: Node) -> void:
 
 func _consume_commands() -> void:
 	var records: Array = session.drain_commands()
+	if not auto_bind_world and String(authority.get_match_state().get("phase", "waiting")) != "running":
+		return
 	for record_variant: Variant in records:
 		if not (record_variant is Dictionary):
 			continue
@@ -785,14 +811,13 @@ func _build_baseline() -> Dictionary:
 func _send_snapshot() -> void:
 	if session == null or authority == null:
 		return
-	var players: Dictionary = authority.get_snapshots()
+	var players: Dictionary = authority.get_movement_snapshots()
 	if players.is_empty():
 		return
 	var batch := {
 		"match_epoch": session.get_match_epoch(),
 		"server_tick": authority.get_tick(),
 		"players": players,
-		"combat": authority.get_combat_state(),
 	}
 	if session.broadcast_snapshot_batch(batch) != OK:
 		return
@@ -919,6 +944,7 @@ func _apply_all_replicas() -> void:
 		var combat_player: Dictionary = combat_replica.get_player(key)
 		if not combat_player.is_empty():
 			state["health"] = combat_player.get("health", state.get("health", 0.0))
+			state["max_health"] = combat_player.get("max_health", state.get("max_health", 0.0))
 			state["dead"] = combat_player.get("dead", state.get("dead", false))
 			state["life_id"] = combat_player.get("life_id", state.get("life_id", 0))
 			state["extracted"] = combat_player.get("extracted", state.get("extracted", false))

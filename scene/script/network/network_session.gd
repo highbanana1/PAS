@@ -50,7 +50,8 @@ var _is_active: bool = false
 var _match_epoch: int = 0
 var _max_seats: int = MAX_SEATS
 var _local_port: int = 0
-var _next_seat: int = 0
+var _next_player_serial: int = 0
+var _accept_fresh_joins: bool = true
 var _local_sequence: int = 0
 var _local_identity: Dictionary = {}
 var _peer_identities: Dictionary = {}
@@ -99,8 +100,8 @@ func host(port: int = DEFAULT_PORT, options: Dictionary = {}) -> int:
 	_connect_transport_signals()
 	multiplayer.multiplayer_peer = peer
 	_is_active = true
-	_next_seat = 1
-	var host_identity := _make_identity(SERVER_PEER_ID, _next_seat, INITIAL_LIFE_ID)
+	_next_player_serial = 1
+	var host_identity := _make_identity(SERVER_PEER_ID, 1, INITIAL_LIFE_ID, _next_player_serial)
 	_peer_identities[SERVER_PEER_ID] = host_identity
 	_player_peers[StringName(host_identity["player_id"])] = SERVER_PEER_ID
 	_last_sequences[StringName(host_identity["player_id"])] = 0
@@ -167,6 +168,11 @@ func get_max_seats() -> int:
 
 func get_remote_capacity() -> int:
 	return maxi(_max_seats - 1, 0)
+
+## Ended rooms still accept a reserved player's authenticated reconnect so
+## they can receive the final result, but no new contestant may enter.
+func set_fresh_joins_allowed(allowed: bool) -> void:
+	if _is_host: _accept_fresh_joins = allowed
 
 func get_player_count() -> int:
 	return _peer_identities.size()
@@ -569,9 +575,9 @@ func _reject_baseline(reason: String, tick: int) -> void:
 	}
 	baseline_rejected.emit(result)
 
-func _make_identity(peer_id: int, seat: int, life_id: int) -> Dictionary:
+func _make_identity(peer_id: int, seat: int, life_id: int, player_serial: int) -> Dictionary:
 	return {
-		"player_id": "player_%d" % seat,
+		"player_id": "player_%d" % player_serial,
 		"peer_id": peer_id,
 		"seat": seat,
 		"match_epoch": _match_epoch,
@@ -584,12 +590,24 @@ func _new_reconnect_token() -> String:
 
 func _free_seat() -> int:
 	for seat in range(2, _max_seats + 1):
-		var candidate := StringName("player_%d" % seat)
-		if not _player_peers.has(candidate) and not _reserved_players.has(candidate):
-			return seat
+		var used := false
+		for identity_variant: Variant in _peer_identities.values():
+			if int(identity_variant.get("seat", 0)) == seat:
+				used = true
+				break
+		if used: continue
+		for reservation_variant: Variant in _reserved_players.values():
+			var identity: Dictionary = reservation_variant.get("identity", {})
+			if int(identity.get("seat", 0)) == seat:
+				used = true
+				break
+		if not used: return seat
 	return 0
 
 func _accept_fresh_join(peer_id: int) -> void:
+	if not _accept_fresh_joins:
+		_reject_join(peer_id, "match_ended")
+		return
 	if get_occupied_seat_count() >= _max_seats:
 		_reject_join(peer_id, "room_full")
 		return
@@ -601,7 +619,8 @@ func _accept_fresh_join(peer_id: int) -> void:
 	if token.is_empty():
 		_reject_join(peer_id, "credential_unavailable")
 		return
-	var identity := _make_identity(peer_id, seat, INITIAL_LIFE_ID)
+	_next_player_serial += 1
+	var identity := _make_identity(peer_id, seat, INITIAL_LIFE_ID, _next_player_serial)
 	identity["reconnect_token"] = token
 	var player_id := StringName(String(identity["player_id"]))
 	_peer_identities[peer_id] = identity
@@ -768,7 +787,8 @@ func _reset_state() -> void:
 	_match_epoch = 0
 	_max_seats = MAX_SEATS
 	_local_port = 0
-	_next_seat = 0
+	_next_player_serial = 0
+	_accept_fresh_joins = true
 	_local_sequence = 0
 	_local_identity = {}
 	_peer_identities.clear()

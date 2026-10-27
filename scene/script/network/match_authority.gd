@@ -12,6 +12,7 @@ var _shotgun = preload("res://scene/script/network/shotgun_authority.gd").new()
 var _melee = preload("res://scene/script/network/melee_authority.gd").new()
 var _items = preload("res://scene/script/network/item_authority.gd").new()
 var _extraction = preload("res://scene/script/network/extraction_authority.gd").new()
+var _match = preload("res://scene/script/network/match_lifecycle.gd").new()
 var _guard_script = preload("res://scene/script/network/guard_authority.gd")
 
 var _players: Dictionary = {}
@@ -22,11 +23,15 @@ var _seen_shot_revision: int = 0
 var _seen_melee_revision: int = 0
 var _seen_item_revision: int = 0
 var _seen_extraction_revision: int = 0
+var _seen_match_revision: int = 0
 
 func register_player(player_id: StringName, actor: Node, config: Dictionary = {}) -> bool:
 	if player_id == &"" or not is_instance_valid(actor) or _players.has(player_id):
 		return false
 	if not actor.has_method("get_motor"):
+		return false
+	var phase := String(_match.get_state().get("phase", "waiting"))
+	if phase == "ended" or (phase == "running" and not _match.record_join(player_id)):
 		return false
 	if config.has("spawn_position"):
 		var configured_spawn: Variant = config["spawn_position"]
@@ -63,6 +68,7 @@ func unregister_player(player_id: StringName) -> bool:
 	if not _players.has(player_id):
 		return false
 	var record: Dictionary = _players[player_id]
+	_match.record_removed(player_id)
 	_extraction.release_player(player_id, _actor_position(record["actor"]) if is_instance_valid(record.get("actor")) else Vector2.ZERO)
 	_players.erase(player_id)
 	_melee.remove_player(player_id)
@@ -138,6 +144,25 @@ func register_extraction_point(point_id: StringName, position: Vector2,
 func get_extraction_state() -> Dictionary:
 	return _extraction.get_state()
 
+## Freeze the actual registered opening roster and selected map supply.
+## Lobby/map code must register exactly ceil(opening players / 4) stars first.
+func start_match(duration_ticks: int = 36000) -> bool:
+	if duration_ticks <= 0 or duration_ticks > 36000: return false
+	var opening_ids: Array = _players.keys()
+	var extraction: Dictionary = _extraction.get_state()
+	var star_ids: Array = extraction.get("stars", {}).keys()
+	if opening_ids.is_empty() or opening_ids.size() > 16 \
+			or star_ids.size() != ceili(float(opening_ids.size()) / 4.0) \
+			or extraction.get("points", {}).is_empty():
+		return false
+	if not _match.configure(duration_ticks): return false
+	var started: bool = _match.start(opening_ids, star_ids, _tick)
+	if started: _touch_domain()
+	return started
+
+func get_match_state() -> Dictionary:
+	return _match.get_state()
+
 func _extraction_players() -> Dictionary:
 	var players: Dictionary = {}
 	for player_id: StringName in _players:
@@ -179,6 +204,7 @@ func _complete_extraction(player_id: StringName) -> void:
 ## Client payload fields such as damage, target id, final guard value, health,
 ## item owner or revision are never read as facts.
 func submit_command(player_id: StringName, command: Dictionary, sequence: int = -1) -> bool:
+	if bool(_match.get_state().get("ended", false)): return false
 	if not _players.has(player_id) or command.is_empty():
 		return false
 	var record: Dictionary = _players[player_id]
@@ -311,6 +337,7 @@ func _acknowledge(record: Dictionary, sequence: int) -> void:
 
 func step() -> void:
 	_tick += 1
+	if bool(_match.get_state().get("ended", false)): return
 	# Complete a deadline against the previous stable position and life before
 	# this tick's movement or lethal attacks. This defines the same-tick tie.
 	for winner: StringName in _extraction.step(_tick, _extraction_players()):
@@ -323,6 +350,7 @@ func step() -> void:
 	_shotgun.step(_tick, _players)
 	# Post-combat pass only cancels bindings or drops on death; never awards wins.
 	_extraction.reconcile(_extraction_players())
+	_match.step(_tick, _extraction.get_state())
 	_sync_domain_revisions()
 
 func get_tick() -> int:
@@ -343,6 +371,22 @@ func get_snapshots() -> Dictionary:
 		if snapshot.is_empty():
 			continue
 		result[String(player_id)] = snapshot
+	return result
+
+## The unreliable 20 Hz stream carries only fields needed for motion,
+## prediction, life transitions, and the live respawn countdown. Full player
+## state stays in the reliable baseline and revisioned combat checkpoints.
+func get_movement_snapshots() -> Dictionary:
+	var result: Dictionary = {}
+	for player_id: StringName in _players.keys():
+		var full: Dictionary = get_snapshot(player_id)
+		if full.is_empty(): continue
+		var compact: Dictionary = {}
+		for field: String in ["player_id", "revision", "position", "velocity",
+				"dead", "extracted", "life_id", "ack_sequence", "respawn_remaining",
+				"health", "max_health"]:
+			compact[field] = full[field]
+		result[String(player_id)] = compact
 	return result
 
 func get_snapshot(player_id: StringName) -> Dictionary:
@@ -557,6 +601,10 @@ func _touch_domain() -> void:
 	_domain_revision += 1
 
 func _sync_domain_revisions() -> void:
+	var match_revision: int = int(_match.get_state().get("revision", 0))
+	if match_revision != _seen_match_revision:
+		_seen_match_revision = match_revision
+		_touch_domain()
 	var shot_revision: int = int(_shotgun.get_state().get("revision", 0))
 	if shot_revision != _seen_shot_revision:
 		_seen_shot_revision = shot_revision
@@ -593,4 +641,5 @@ func get_combat_state() -> Dictionary:
 		"guards": guards,
 		"items": _items.get_state(),
 		"extraction": _extraction.get_state(),
+		"match": _match.get_state(),
 	}

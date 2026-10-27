@@ -40,7 +40,10 @@ func set_network_controlled(enabled: bool) -> void:
 	if not enabled: visible = true
 
 func apply_network_star(state: Dictionary, carrier: Node2D = null) -> void:
-	if not network_controlled or state.is_empty(): return
+	if not network_controlled: return
+	if state.is_empty():
+		visible = false
+		return
 	var phase := String(state.get("state", "FREE"))
 	visible = phase != "CONSUMED"
 	if phase == "CARRIED" and is_instance_valid(carrier):

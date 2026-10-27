@@ -54,12 +54,23 @@ func run() -> void:
 		if expired:
 			launch("stale")
 			check(await wait_for("stale_final.json", 7000), "Old credential retry finishes")
-			check(await wait_for("expiry_host_final.json", 4000), "Host finishes expiry audit")
+			if await wait_for("expiry_host_final.json", 4000):
+				launch("replacement")
+				check(await wait_for("replacement_final.json", 9000), "Fresh client joins the released seat")
+				check(await wait_for("replacement_host_final.json", 4000), "Host audits replacement identity")
+			else:
+				check(false, "Host finishes expiry audit")
 
 	var left_state: Dictionary = read("expiry_left.json")
 	var expired_state: Dictionary = read("expiry_state.json")
 	var stale: Dictionary = read("stale_final.json")
 	var host: Dictionary = read("expiry_host_final.json")
+	var first_id := String(read("first.json").get("identity", {}).get("player_id", ""))
+	var replacement: Dictionary = read("replacement_final.json")
+	var replacement_host: Dictionary = read("replacement_host_final.json")
+	var next_id := String(replacement.get("player_id", ""))
+	var old_sequence := int(first_id.trim_prefix("player_"))
+	var next_sequence := int(next_id.trim_prefix("player_"))
 	check(bool(left_state.get("reserved", false)) and bool(left_state.get("actor_retained", false))
 		and int(left_state.get("occupied", -1)) == 2,
 		"Disconnected actor stays in combat and holds the reserved seat")
@@ -84,8 +95,24 @@ func run() -> void:
 		and bool(host.get("no_duplicate_drop", false))
 		and int(host.get("occupied", -1)) == 1,
 		"Later ticks do not repeat the expiry signal or drops")
+	check(int(replacement.get("seat", -1)) == 2
+		and int(replacement_host.get("new_seat", -1)) == 2
+		and int(replacement_host.get("occupied", -1)) == 2,
+		"Fresh player reuses released seat two")
+	check(first_id.begins_with("player_") and next_id.begins_with("player_")
+		and next_id != first_id and next_sequence > old_sequence
+		and String(replacement_host.get("old_player_id", "")) == first_id
+		and String(replacement_host.get("new_player_id", "")) == next_id,
+		"Fresh player receives a distinct monotonic identity")
+	check(bool(replacement.get("baseline_has_new", false))
+		and bool(replacement.get("baseline_excludes_old", false))
+		and bool(replacement_host.get("old_actor_absent", false))
+		and bool(replacement_host.get("new_actor_bound", false))
+		and bool(replacement_host.get("old_drop_unchanged", false)),
+		"Fresh actor enters without reviving old actor or changing its drops")
 	check(read("expiry_host_error.json").is_empty() and read("initial_error.json").is_empty(),
 		"No fixture setup failed")
+	check(read("replacement_error.json").is_empty(), "Replacement fixture setup succeeded")
 	var until := Time.get_ticks_msec() + 3000
 	while pids.any(func(pid: int) -> bool: return OS.is_process_running(pid)) \
 			and Time.get_ticks_msec() < until:
@@ -93,7 +120,7 @@ func run() -> void:
 	for pid in pids:
 		if OS.is_process_running(pid): OS.kill(pid)
 		check(not OS.is_process_running(pid), "Fixture process exited")
-	for role in ["host_expiry", "initial", "stale"]:
+	for role in ["host_expiry", "initial", "stale", "replacement"]:
 		var target := folder.path_join(role + ".log")
 		var output := FileAccess.get_file_as_string(target) if FileAccess.file_exists(target) else "missing"
 		check(output != "missing" and not output.contains("SCRIPT ERROR")
