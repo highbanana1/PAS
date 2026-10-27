@@ -49,6 +49,7 @@ func register_player(player_id: StringName, actor: Node, config: Dictionary = {}
 		"life_id": life_id,
 		"guard": guard,
 		"extracted": false,
+		"online": true,
 	}
 	if bool(record["dead"]):
 		record["respawn_remaining"] = _respawn_delay(actor)
@@ -68,6 +69,47 @@ func unregister_player(player_id: StringName) -> bool:
 	_clear_actions(record)
 	_emit_event("player_unregistered", record, {})
 	return true
+
+## A transport loss does not remove the combat actor. Stop held input at once,
+## while death, respawn and extraction continue on the host clock.
+func suspend_player(player_id: StringName) -> bool:
+	if not _players.has(player_id): return false
+	var record: Dictionary = _players[player_id]
+	if not bool(record["online"]): return false
+	record["online"] = false
+	record["move_input"] = Vector2.ZERO
+	_clear_actions(record)
+	record["guard"].cancel()
+	_touch_domain()
+	_emit_event("player_suspended", record)
+	return true
+
+func resume_player(player_id: StringName) -> bool:
+	if not _players.has(player_id): return false
+	var record: Dictionary = _players[player_id]
+	if bool(record["online"]): return false
+	record["online"] = true
+	record["move_input"] = Vector2.ZERO
+	# The new transport starts sequence numbering at one; acknowledgements must
+	# share that new sequence domain for client prediction to reconcile.
+	record["last_sequence"] = 0
+	_clear_actions(record)
+	_touch_domain()
+	_emit_event("player_resumed", record)
+	return true
+
+## Called once when the reserved seat expires. ItemAuthority's drop is
+## idempotent if death has already dropped the inventory. unregister_player
+## releases any carried/bound star and clears the extraction point.
+func expire_player(player_id: StringName) -> bool:
+	if not _players.has(player_id): return false
+	var record: Dictionary = _players[player_id]
+	if bool(record["online"]): return false
+	var actor: Variant = record.get("actor")
+	var position: Vector2 = _actor_position(actor) if is_instance_valid(actor) else Vector2.ZERO
+	var dropped: Array = _items.drop_inventory(player_id, int(record["life_id"]), position)
+	_emit_event("player_reservation_expired", record, {"dropped_items": dropped})
+	return unregister_player(player_id)
 
 func _combat_config(actor: Node, registration: Dictionary) -> Dictionary:
 	var candidate: Variant = registration.get("combat_rules", {})
@@ -322,6 +364,7 @@ func get_snapshot(player_id: StringName) -> Dictionary:
 		"can_dash": motor.can_dash,
 		"jump_count": motor.jump_count,
 		"dead": actor.get("is_dead") == true,
+		"online": bool(record["online"]),
 		"extracted": bool(record["extracted"]),
 		"spectating": bool(record["extracted"]),
 		"health": _actor_health(actor, "real_hp"),
@@ -435,6 +478,7 @@ func _step_dead(record: Dictionary, actor: Node) -> void:
 		})
 
 func _accepts_actions(record: Dictionary) -> bool:
+	if not bool(record["online"]): return false
 	if bool(record["extracted"]): return false
 	if is_instance_valid(record.get("actor")) and not bool(record["dead"]):
 		var actor: Node = record["actor"]

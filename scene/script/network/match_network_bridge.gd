@@ -46,6 +46,7 @@ var _configured: bool = false
 var _host_authority: bool = false
 var _local_player_id: StringName = &""
 var _actors: Dictionary = {}
+var _seen_replica_players: Dictionary = {}
 var _world_star_nodes: Dictionary = {}
 var _world_point_nodes: Dictionary = {}
 var _step_accumulator: float = 0.0
@@ -99,6 +100,11 @@ func configure(session_node: Node, authority_instance = null) -> bool:
 			session.player_joined.connect(_on_player_joined)
 		if not session.player_left.is_connected(_on_player_left):
 			session.player_left.connect(_on_player_left)
+		if session.has_signal("player_resumed") and not session.player_resumed.is_connected(_on_player_resumed):
+			session.player_resumed.connect(_on_player_resumed)
+		if session.has_signal("player_reservation_expired") \
+				and not session.player_reservation_expired.is_connected(_on_player_reservation_expired):
+			session.player_reservation_expired.connect(_on_player_reservation_expired)
 	else:
 		if not session.snapshot_batch_received.is_connected(_on_snapshot_batch_received):
 			session.snapshot_batch_received.connect(_on_snapshot_batch_received)
@@ -175,7 +181,8 @@ func _auto_world_extraction() -> void:
 		var actor: Node2D = _actors.get(String(player_id)) as Node2D
 		if not is_instance_valid(actor): continue
 		var player_state: Dictionary = authority.get_snapshot(player_id)
-		if bool(player_state.get("dead", true)) or bool(player_state.get("extracted", false)):
+		if bool(player_state.get("dead", true)) or bool(player_state.get("extracted", false)) \
+				or not bool(player_state.get("online", true)):
 			continue
 		var state: Dictionary = authority.get_extraction_state()
 		for id: String in _world_star_nodes:
@@ -665,6 +672,8 @@ func _step_authority(delta: float) -> void:
 	_step_accumulator += maxf(delta, 0.0)
 	var steps := 0
 	while _step_accumulator + EPSILON >= FIXED_STEP and steps < MAX_CATCHUP_STEPS:
+		if session.has_method("expire_reserved_players"):
+			session.expire_reserved_players()
 		_consume_commands()
 		authority.step()
 		_drain_authority_lifecycle()
@@ -729,6 +738,11 @@ func _consume_commands() -> void:
 		if command.is_empty():
 			continue
 		var key := String(player_id)
+		# A validated command can wait in the queue while its sender disconnects.
+		# Recheck the live peer mapping immediately before touching authority.
+		if session.get_peer_id_for_player(player_id) != int(record.get("peer_id", 0)):
+			_authority_rejected_commands += 1
+			continue
 		if not _actors.has(key):
 			_authority_rejected_commands += 1
 			continue
@@ -804,6 +818,22 @@ func _on_player_joined(peer_id: int, _player_id: String) -> void:
 
 func _on_player_left(peer_id: int, _player_id: String) -> void:
 	_pending_baseline_peers.erase(peer_id)
+	if _host_authority and authority != null and not _player_id.is_empty():
+		authority.suspend_player(StringName(_player_id))
+
+func _on_player_resumed(peer_id: int, player_id: String) -> void:
+	if not _host_authority or authority == null: return
+	authority.resume_player(StringName(player_id))
+	_pending_baseline_peers[peer_id] = true
+
+func _on_player_reservation_expired(player_id: String) -> void:
+	if not _host_authority or authority == null: return
+	var id := StringName(player_id)
+	if not authority.expire_player(id): return
+	var actor: Variant = _actors.get(player_id)
+	_actors.erase(player_id)
+	if is_instance_valid(actor):
+		actor.queue_free()
 
 func _on_session_closed() -> void:
 	if _session_closed:
@@ -820,6 +850,7 @@ func _on_session_closed() -> void:
 			node_variant.set_network_controlled(false)
 	_world_star_nodes.clear()
 	_world_point_nodes.clear()
+	_seen_replica_players.clear()
 	_pending_baseline_peers.clear()
 	if replica != null:
 		replica.deactivate()
@@ -866,6 +897,16 @@ func _configure_prediction_speed(actor: Node) -> void:
 func _apply_all_replicas() -> void:
 	if replica == null:
 		return
+	if not _host_authority and not _session_closed and replica.has_baseline():
+		var authoritative_players: Dictionary = replica.get_states()
+		for key: String in _seen_replica_players.keys():
+			if authoritative_players.has(key): continue
+			_seen_replica_players.erase(key)
+			var departed: Variant = _actors.get(key)
+			_actors.erase(key)
+			if is_instance_valid(departed): departed.queue_free()
+		for key: String in authoritative_players:
+			_seen_replica_players[key] = true
 	var states: Dictionary
 	if not _host_authority and client_view != null:
 		states = client_view.get_render_states()

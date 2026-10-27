@@ -12,6 +12,8 @@ signal identity_assigned(identity: Dictionary)
 signal identity_updated(identity: Dictionary)
 signal player_joined(peer_id: int, player_id: String)
 signal player_left(peer_id: int, player_id: String)
+signal player_resumed(peer_id: int, player_id: String)
+signal player_reservation_expired(player_id: String)
 signal command_result(result: Dictionary)
 signal snapshot_batch_received(batch: Dictionary)
 signal combat_state_received(packet: Dictionary)
@@ -30,6 +32,8 @@ const BASELINE_CHANNEL: int = 0
 const COMMAND_CHANNEL: int = 1
 const SNAPSHOT_CHANNEL: int = 2
 const MAX_CHANNELS: int = 3
+const RECONNECT_WINDOW_MSEC: int = 30000
+const JOIN_HANDSHAKE_MSEC: int = 5000
 
 const REJECT_UNKNOWN_PEER: String = "unknown_peer"
 const REJECT_INVALID_ENVELOPE: String = "invalid_envelope"
@@ -51,6 +55,11 @@ var _local_sequence: int = 0
 var _local_identity: Dictionary = {}
 var _peer_identities: Dictionary = {}
 var _player_peers: Dictionary = {}
+## Host-only reservation data. Tokens never enter a broadcast or checkpoint.
+var _reserved_players: Dictionary = {}
+var _pending_peers: Dictionary = {}
+var _rejected_peers: Dictionary = {}
+var _requested_resume: Dictionary = {}
 var _last_sequences: Dictionary = {}
 var _commands: Array[Dictionary] = []
 var _rejections: Array[Dictionary] = []
@@ -98,7 +107,9 @@ func host(port: int = DEFAULT_PORT, options: Dictionary = {}) -> int:
 	_local_identity = host_identity.duplicate(true)
 	return OK
 
-func join(address: String, port: int) -> int:
+## Pass a saved get_local_identity() as resume to reclaim the same player.
+## Existing join(address, port) calls remain a fresh join.
+func join(address: String, port: int, resume: Dictionary = {}) -> int:
 	if not is_inside_tree():
 		return ERR_UNCONFIGURED
 	if _is_active:
@@ -111,6 +122,7 @@ func join(address: String, port: int) -> int:
 		return error
 	_reset_state()
 	_is_host = false
+	_requested_resume = resume.duplicate(true)
 	_max_seats = MAX_SEATS
 	_local_port = port
 	_connect_transport_signals()
@@ -159,6 +171,36 @@ func get_remote_capacity() -> int:
 func get_player_count() -> int:
 	return _peer_identities.size()
 
+## Active and reserved seats both count against the match limit.
+func get_occupied_seat_count() -> int:
+	return _peer_identities.size() + _reserved_players.size()
+
+func is_player_reserved(player_id: StringName) -> bool:
+	return _is_host and _reserved_players.has(player_id)
+
+func is_player_online(player_id: StringName) -> bool:
+	return _player_peers.has(player_id)
+
+func get_reserved_player_ids() -> Array[StringName]:
+	var result: Array[StringName] = []
+	if _is_host:
+		for player_id: StringName in _reserved_players:
+			result.append(player_id)
+	return result
+
+## Bridge may call this each authority step; the session also checks in _process.
+## Monotonic host time is used so paused gameplay cannot extend a reservation.
+func expire_reserved_players() -> void:
+	if not _is_host or not _is_active:
+		return
+	var now: int = Time.get_ticks_msec()
+	for player_id: StringName in _reserved_players.keys():
+		if now < int(_reserved_players[player_id].get("expires_at_msec", 0)):
+			continue
+		_reserved_players.erase(player_id)
+		_last_sequences.erase(player_id)
+		player_reservation_expired.emit(String(player_id))
+
 func get_local_identity() -> Dictionary:
 	if _local_identity.is_empty():
 		return {}
@@ -184,8 +226,18 @@ func get_peer_id_for_player(player_id: StringName) -> int:
 func set_player_life(player_id: StringName, life_id: int) -> bool:
 	if not _is_host or not _is_active:
 		return false
-	if not _player_peers.has(player_id) or life_id < INITIAL_LIFE_ID:
+	if life_id < INITIAL_LIFE_ID:
 		return false
+	if not _player_peers.has(player_id):
+		if not _reserved_players.has(player_id):
+			return false
+		var reservation: Dictionary = _reserved_players[player_id]
+		var offline_identity: Dictionary = reservation["identity"]
+		if life_id <= int(offline_identity.get("life_id", 0)):
+			return false
+		offline_identity["life_id"] = life_id
+		_last_sequences[player_id] = 0
+		return true
 	var peer_id: int = int(_player_peers[player_id])
 	var identity: Dictionary = _peer_identities[peer_id]
 	if life_id <= int(identity.get("life_id", 0)):
@@ -329,6 +381,31 @@ func mark_baseline_applied(baseline: Dictionary) -> bool:
 # Fire and movement share sequence numbering, so use one reliable ordered stream.
 # A later movement packet must never overtake and invalidate an earlier fire.
 # Tradeoff: packet loss delays movement; split sequence domains in a later ticket.
+@rpc("any_peer", "call_remote", "reliable", BASELINE_CHANNEL)
+func _rpc_join_request(resume: Dictionary) -> void:
+	if not _is_host or not _is_active:
+		return
+	var sender: int = int(multiplayer.get_remote_sender_id())
+	if sender <= SERVER_PEER_ID or not _pending_peers.has(sender) or _peer_identities.has(sender):
+		return
+	_pending_peers.erase(sender)
+	expire_reserved_players()
+	if resume.is_empty():
+		_accept_fresh_join(sender)
+	else:
+		_accept_resume(sender, resume)
+
+@rpc("authority", "call_remote", "reliable", BASELINE_CHANNEL)
+func _rpc_join_rejected(reason: String) -> void:
+	if _is_host or not _is_active or int(multiplayer.get_remote_sender_id()) != SERVER_PEER_ID:
+		return
+	_is_active = false
+	_was_connected = false
+	_last_close_reason = reason
+	join_failed.emit(reason)
+	_close_transport()
+	_emit_session_closed()
+
 @rpc("any_peer", "call_remote", "reliable", COMMAND_CHANNEL)
 func _rpc_submit_envelope(envelope: Dictionary) -> void:
 	if not _is_host or not _is_active:
@@ -348,11 +425,14 @@ func _rpc_assign_identity(identity: Dictionary) -> void:
 	var peer_id: int = int(identity.get("peer_id", 0))
 	var epoch: int = int(identity.get("match_epoch", 0))
 	var life_id: int = int(identity.get("life_id", 0))
-	if player_id.is_empty() or peer_id <= 0 or epoch <= 0 or life_id < INITIAL_LIFE_ID:
+	var token := String(identity.get("reconnect_token", ""))
+	if player_id.is_empty() or peer_id <= 0 or epoch <= 0 or life_id < INITIAL_LIFE_ID \
+			or token.length() != 64:
 		return
 	_local_identity = identity.duplicate(true)
 	_match_epoch = epoch
 	_local_sequence = 0
+	_requested_resume.clear()
 	identity_assigned.emit(get_local_identity())
 
 @rpc("authority", "call_remote", "reliable")
@@ -498,6 +578,79 @@ func _make_identity(peer_id: int, seat: int, life_id: int) -> Dictionary:
 		"life_id": life_id,
 	}
 
+func _new_reconnect_token() -> String:
+	var bytes: PackedByteArray = Crypto.new().generate_random_bytes(32)
+	return bytes.hex_encode() if bytes.size() == 32 else ""
+
+func _free_seat() -> int:
+	for seat in range(2, _max_seats + 1):
+		var candidate := StringName("player_%d" % seat)
+		if not _player_peers.has(candidate) and not _reserved_players.has(candidate):
+			return seat
+	return 0
+
+func _accept_fresh_join(peer_id: int) -> void:
+	if get_occupied_seat_count() >= _max_seats:
+		_reject_join(peer_id, "room_full")
+		return
+	var seat := _free_seat()
+	if seat == 0:
+		_reject_join(peer_id, "room_full")
+		return
+	var token := _new_reconnect_token()
+	if token.is_empty():
+		_reject_join(peer_id, "credential_unavailable")
+		return
+	var identity := _make_identity(peer_id, seat, INITIAL_LIFE_ID)
+	identity["reconnect_token"] = token
+	var player_id := StringName(String(identity["player_id"]))
+	_peer_identities[peer_id] = identity
+	_player_peers[player_id] = peer_id
+	_last_sequences[player_id] = 0
+	_rpc_assign_identity.rpc_id(peer_id, identity.duplicate(true))
+	player_joined.emit(peer_id, String(player_id))
+
+func _accept_resume(peer_id: int, resume: Dictionary) -> void:
+	var player_id := StringName(String(resume.get("player_id", "")))
+	var token := String(resume.get("reconnect_token", ""))
+	if player_id == &"" or token.length() != 64 \
+			or int(resume.get("match_epoch", -1)) != _match_epoch \
+			or not _reserved_players.has(player_id):
+		_reject_join(peer_id, "invalid_reconnect_credential")
+		return
+	var reservation: Dictionary = _reserved_players[player_id]
+	var previous: Dictionary = reservation["identity"]
+	if token != String(previous.get("reconnect_token", "")) \
+			or int(resume.get("seat", -1)) != int(previous.get("seat", -2)):
+		_reject_join(peer_id, "invalid_reconnect_credential")
+		return
+	var replacement_token := _new_reconnect_token()
+	if replacement_token.is_empty():
+		_reject_join(peer_id, "credential_unavailable")
+		return
+	var identity: Dictionary = previous.duplicate(true)
+	identity["peer_id"] = peer_id
+	identity["reconnect_token"] = replacement_token
+	_reserved_players.erase(player_id)
+	_peer_identities[peer_id] = identity
+	_player_peers[player_id] = peer_id
+	_last_sequences[player_id] = 0
+	_rpc_assign_identity.rpc_id(peer_id, identity.duplicate(true))
+	player_resumed.emit(peer_id, String(player_id))
+
+func _reject_join(peer_id: int, reason: String) -> void:
+	_rpc_join_rejected.rpc_id(peer_id, reason)
+	# Give the reliable reason a chance to leave. The pending eviction belongs
+	# to this session and is discarded if the peer leaves or the session resets.
+	_rejected_peers[peer_id] = Time.get_ticks_msec() + 200
+
+func _disconnect_rejected_peer(peer_id: int) -> void:
+	if not _is_host or not is_active() or _peer_identities.has(peer_id):
+		return
+	var peer: MultiplayerPeer = multiplayer.multiplayer_peer
+	if peer != null:
+		peer.disconnect_peer(peer_id)
+
 func _connect_transport_signals() -> void:
 	var api: MultiplayerAPI = multiplayer
 	if not api.peer_connected.is_connected(_on_peer_connected):
@@ -514,21 +667,13 @@ func _connect_transport_signals() -> void:
 func _on_peer_connected(peer_id: int) -> void:
 	if not _is_host or not _is_active or peer_id == SERVER_PEER_ID:
 		return
-	if _peer_identities.has(peer_id):
-		return
-	if _peer_identities.size() >= _max_seats:
-		return
-	_next_seat += 1
-	var identity := _make_identity(peer_id, _next_seat, INITIAL_LIFE_ID)
-	_peer_identities[peer_id] = identity
-	_player_peers[StringName(identity["player_id"])] = peer_id
-	_last_sequences[StringName(identity["player_id"])] = 0
-	_rpc_assign_identity.rpc_id(peer_id, identity)
-	player_joined.emit(peer_id, String(identity["player_id"]))
+	_pending_peers[peer_id] = Time.get_ticks_msec() + JOIN_HANDSHAKE_MSEC
 
 func _on_peer_disconnected(peer_id: int) -> void:
 	if not _is_host:
 		return
+	_pending_peers.erase(peer_id)
+	_rejected_peers.erase(peer_id)
 	if not _peer_identities.has(peer_id):
 		return
 	var identity: Dictionary = _peer_identities[peer_id]
@@ -536,10 +681,22 @@ func _on_peer_disconnected(peer_id: int) -> void:
 	_peer_identities.erase(peer_id)
 	_player_peers.erase(StringName(player_id))
 	_last_sequences.erase(StringName(player_id))
+	# Once the socket is gone, no already-accepted command may still drive the
+	# retained actor. The bridge also clears continuous movement and guard input.
+	var remaining: Array[Dictionary] = []
+	for record: Dictionary in _commands:
+		if int(record.get("peer_id", 0)) != peer_id:
+			remaining.append(record)
+	_commands = remaining
+	_reserved_players[StringName(player_id)] = {
+		"identity": identity.duplicate(true),
+		"expires_at_msec": Time.get_ticks_msec() + RECONNECT_WINDOW_MSEC,
+	}
 	player_left.emit(peer_id, player_id)
 
 func _on_connected_to_server() -> void:
 	_was_connected = true
+	_rpc_join_request.rpc_id(SERVER_PEER_ID, _requested_resume.duplicate(true))
 
 func _on_connection_failed() -> void:
 	if _is_host:
@@ -558,6 +715,18 @@ func _on_server_disconnected() -> void:
 	_handle_server_disconnect("server_disconnected")
 
 func _process(_delta: float) -> void:
+	if _is_active and _is_host:
+		expire_reserved_players()
+		var now := Time.get_ticks_msec()
+		for peer_id: int in _rejected_peers.keys():
+			if now >= int(_rejected_peers[peer_id]):
+				_rejected_peers.erase(peer_id)
+				_disconnect_rejected_peer(peer_id)
+		for peer_id: int in _pending_peers.keys():
+			if now >= int(_pending_peers[peer_id]):
+				_pending_peers.erase(peer_id)
+				_reject_join(peer_id, "join_timeout")
+		return
 	if not _is_active or _is_host or not _was_connected:
 		return
 	if not is_inside_tree():
@@ -604,6 +773,10 @@ func _reset_state() -> void:
 	_local_identity = {}
 	_peer_identities.clear()
 	_player_peers.clear()
+	_reserved_players.clear()
+	_pending_peers.clear()
+	_rejected_peers.clear()
+	_requested_resume.clear()
 	_last_sequences.clear()
 	_commands.clear()
 	_rejections.clear()
