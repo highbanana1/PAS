@@ -25,6 +25,7 @@ signal join_failed(reason: String)
 
 const MAX_SEATS: int = 16
 const MAX_REMOTE_CLIENTS: int = MAX_SEATS - 1
+const JOIN_REJECTION_SLOTS: int = 1
 const INITIAL_LIFE_ID: int = 1
 const SERVER_PEER_ID: int = 1
 const DEFAULT_PORT: int = 0
@@ -87,7 +88,10 @@ func host(port: int = DEFAULT_PORT, options: Dictionary = {}) -> int:
 	var epoch: int = int(options.get("match_epoch", 0))
 	if epoch <= 0:
 		epoch = int(Time.get_ticks_usec())
-	var remote_capacity: int = maxi(seats - 1, 1)
+	# Keep one transport slot outside the authoritative room capacity so a full
+	# room can still accept the next handshake long enough to return room_full.
+	# The session's seat checks below remain the authority for actual admission.
+	var remote_capacity: int = maxi(seats - 1 + JOIN_REJECTION_SLOTS, 1)
 	var peer := ENetMultiplayerPeer.new()
 	var error: int = peer.create_server(port, remote_capacity, MAX_CHANNELS)
 	if error != OK:

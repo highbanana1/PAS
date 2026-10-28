@@ -389,6 +389,21 @@ func get_movement_snapshots() -> Dictionary:
 		result[String(player_id)] = compact
 	return result
 
+## Reliable combat checkpoints keep only player fields that must survive loss
+## of the movement stream. Motion, guard and inventory data already travel in
+## their dedicated domains and must not be duplicated in every combat packet.
+func get_combat_snapshots() -> Dictionary:
+	var result: Dictionary = {}
+	for player_id: StringName in _players.keys():
+		var full: Dictionary = get_snapshot(player_id)
+		if full.is_empty(): continue
+		var compact: Dictionary = {}
+		for field: String in ["player_id", "tick", "revision", "dead", "online",
+				"extracted", "spectating", "health", "max_health", "life_id"]:
+			compact[field] = full[field]
+		result[String(player_id)] = compact
+	return result
+
 func get_snapshot(player_id: StringName) -> Dictionary:
 	if not _players.has(player_id):
 		return {}

@@ -49,7 +49,7 @@ func run_host() -> void:
 	bridge = Bridge.new()
 	root.add_child(bridge)
 	session.player_joined.connect(_host_joined)
-	var error := session.host(0, {"seats": 16, "match_epoch": 808016})
+	var error: int = session.host(0, {"seats": 16, "match_epoch": 808016})
 	if error != OK or not bridge.configure(session):
 		write("host_error.json", {"error": error}); quit(1); return
 	_bind_actor(String(session.get_local_identity().get("player_id", "")), 1)
@@ -63,8 +63,11 @@ func run_host() -> void:
 			"occupied": session.get_occupied_seat_count()})
 	await create_timer(5.0).timeout
 	var metrics: Dictionary = bridge.get_network_metrics()
-	write("host_result.json", {"ok": full, "players": session.get_player_count(),
-		"occupied": session.get_occupied_seat_count(), "actors": actors.size(),
+	var player_count: int = session.get_player_count()
+	var occupied_seats: int = session.get_occupied_seat_count()
+	var retained_full_room := full and player_count == 16 and occupied_seats == 16
+	write("host_result.json", {"ok": retained_full_room, "players": player_count,
+		"occupied": occupied_seats, "actors": actors.size(),
 		"last_tick": bridge.get_last_snapshot_tick(), "metrics": metrics,
 		"os": OS.get_name(), "processor_count": OS.get_processor_count(),
 		"duration_seconds": 5.0})
@@ -92,7 +95,7 @@ func run_client(expect_rejection: bool) -> void:
 	root.add_child(bridge)
 	var reasons: Array[String] = []
 	session.join_failed.connect(func(reason: String) -> void: reasons.append(reason))
-	var error := session.join("127.0.0.1", port)
+	var error: int = session.join("127.0.0.1", port)
 	if error != OK or not bridge.configure(session):
 		write(result_name(expect_rejection), {"ok": false, "error": error}); quit(1); return
 	if expect_rejection:
@@ -104,14 +107,20 @@ func run_client(expect_rejection: bool) -> void:
 		return
 	var converged := await wait_until(func() -> bool:
 		return bridge.has_baseline() and bridge.get_replica_states().size() == 16 \
-			and bridge.get_applied_snapshot_count() >= 5, 14000)
-	write(result_name(false), {"ok": converged,
+			and bridge.get_applied_snapshot_count() >= 1, 14000)
+	# Keep every occupied seat online for the host's complete five-second sample.
+	# Exiting as soon as one client converges turns the load test into a shrinking
+	# room and makes broadcasts race already-closed ENet peers.
+	var sampled := await wait_until(func() -> bool:
+		return not read("host_result.json").is_empty(), 10000)
+	write(result_name(false), {"ok": converged and sampled,
 		"player_id": String(session.get_local_identity().get("player_id", "")),
 		"players": bridge.get_replica_states().size(),
 		"applied_snapshots": bridge.get_applied_snapshot_count(),
 		"last_tick": bridge.get_last_snapshot_tick(),
 		"last_batch_players": bridge.get_last_applied_batch().get("players", {}).size()})
-	quit(0 if converged else 1)
+	if session.is_active(): session.stop()
+	quit(0 if converged and sampled else 1)
 
 func result_name(overflow: bool) -> String:
 	return "overflow.json" if overflow else "client_%02d.json" % index

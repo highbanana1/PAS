@@ -3,6 +3,7 @@ extends SceneTree
 ## Ticket 08 real localhost ENet load seam: sixteen occupied seats receive
 ## fragmented movement ticks, and the seventeenth connection is rejected.
 const FIXTURE := "res://tests/fixtures/network_scale_peer.gd"
+const MAX_CLIENT_LAG_TICKS := 120
 var failures: Array[String] = []
 var pids: Array[int] = []
 var folder: String
@@ -50,20 +51,25 @@ func run() -> void:
 	if full: launch("overflow")
 	var overflow := await wait_for("overflow.json", 8000)
 	check(overflow and bool(read("overflow.json").get("ok", false)) \
-		and String(read("overflow.json").get("reason", "")) == "room_full",
+		and String(read("overflow.json").get("reason", "")) == "room_full" \
+		and bool(read("overflow.json").get("no_identity", false)),
 		"Seventeenth peer is rejected without receiving an identity")
 	for index in range(1, 16):
 		var name := "client_%02d.json" % index
 		var finished := await wait_for(name, 16000)
 		var result: Dictionary = read(name)
+		var host_tick := int(read("host_result.json").get("last_tick", -1))
+		var client_tick := int(result.get("last_tick", -1))
 		check(finished and bool(result.get("ok", false)) \
 			and int(result.get("players", 0)) == 16 \
-			and int(result.get("last_batch_players", 0)) == 16,
+			and int(result.get("last_batch_players", 0)) == 16 \
+			and client_tick >= host_tick - MAX_CLIENT_LAG_TICKS,
 			"Client %02d converges an atomic sixteen-player tick" % index)
 	var host_done := await wait_for("host_result.json", 10000)
 	var host: Dictionary = read("host_result.json")
 	var metrics: Dictionary = host.get("metrics", {})
-	check(host_done and bool(host.get("ok", false)) and int(host.get("actors", 0)) == 16,
+	check(host_done and bool(host.get("ok", false)) and int(host.get("actors", 0)) == 16 \
+		and int(host.get("players", 0)) == 16 and int(host.get("occupied", 0)) == 16,
 		"Host retains all sixteen authoritative actors during the sample")
 	check(int(metrics.get("snapshot_batches", 0)) > 0 \
 		and int(metrics.get("snapshot_packets", 0)) > int(metrics.get("snapshot_batches", 0)) \

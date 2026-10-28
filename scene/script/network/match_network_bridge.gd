@@ -1097,7 +1097,7 @@ func _send_combat() -> void:
 		return
 	_sent_combat_revision = int(state.revision)
 	var packet := {"match_epoch": session.get_match_epoch(), "server_tick": authority.get_tick(),
-		"combat": state, "players": authority.get_snapshots()}
+		"combat": state, "players": authority.get_combat_snapshots()}
 	var packet_bytes := var_to_bytes(packet).size()
 	_combat_packet_count += 1
 	_combat_payload_bytes += packet_bytes
