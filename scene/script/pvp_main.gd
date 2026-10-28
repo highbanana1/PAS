@@ -40,7 +40,8 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if not is_instance_valid(_bridge) or not is_instance_valid(_session): return
 	var local_id := String(_session.get_local_identity().get("player_id", ""))
-	if local_id.is_empty() or not _actors.has(local_id): return
+	_update_match_status(local_id)
+	if local_id.is_empty() or not _actors.has(local_id) or not is_instance_valid(_actors[local_id]): return
 	var local_state := _player_state(local_id)
 	if not bool(local_state.get("extracted", false)):
 		if _spectator_camera.enabled:
@@ -57,8 +58,28 @@ func _process(_delta: float) -> void:
 		_spectator_camera.make_current()
 	if not _can_spectate(_spectator_target, local_id):
 		_cycle_spectator(local_id)
-	if _actors.has(_spectator_target):
+	if _can_spectate(_spectator_target, local_id):
 		_spectator_camera.global_position = _actors[_spectator_target].global_position
+
+func _update_match_status(local_id: String) -> void:
+	var match_state: Dictionary = _bridge.get_match_state()
+	if String(match_state.get("phase", "waiting")) == "waiting": return
+	_status.text = _match_status_text(match_state, local_id)
+
+func _match_status_text(match_state: Dictionary, local_id: String) -> String:
+	var phase := String(match_state.get("phase", "waiting"))
+	var results: Dictionary = match_state.get("results", {})
+	var result := String(results.get(local_id, ""))
+	if phase == "running":
+		if result == "win": return "撤离成功 · 观战中（Tab 切换视角）"
+		if result == "loss": return "已出局 · 观战中（Tab 切换视角）"
+		return "对局进行中 · 剩余 %d 秒" % ceili(float(match_state.get("remaining_ticks", 0)) / 60.0)
+	if phase == "ended":
+		var outcome := "胜利" if result == "win" else "失败"
+		var reason := String(match_state.get("end_reason", ""))
+		var reason_text: String = String({"time_limit": "时间到", "all_stars_consumed": "星星已耗尽", "no_contenders": "无人继续参赛"}.get(reason, "对局结束"))
+		return "对局结束 · %s · %s" % [outcome, reason_text]
+	return ""
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_TAB:
@@ -74,6 +95,8 @@ func _player_state(player_id: String) -> Dictionary:
 
 func _can_spectate(player_id: String, local_id: String) -> bool:
 	if player_id.is_empty() or player_id == local_id or not _actors.has(player_id): return false
+	var actor: Node = _actors[player_id]
+	if not is_instance_valid(actor) or actor.is_queued_for_deletion(): return false
 	return not bool(_player_state(player_id).get("extracted", false))
 
 func _cycle_spectator(local_id: String) -> void:
@@ -240,9 +263,7 @@ func _on_replicas_updated(_packet: Dictionary) -> void:
 		var actor: Node = _actors[id]
 		_actors.erase(id)
 		if is_instance_valid(actor): actor.queue_free()
-	var phase := String(_bridge.get_match_state().get("phase", "waiting"))
-	if phase == "running": _status.text = "对局进行中"
-	elif phase == "ended": _status.text = "对局结束"
+	_update_match_status(local_id)
 
 func _ensure_actor(player_id: String, local: bool, seat: int,
 		state: Dictionary = {}) -> void:
