@@ -8,15 +8,18 @@ const ONLINE_SCENE := "res://scene/pvp_main.tscn"
 var _panel: PanelContainer
 var _brightness_cover: ColorRect
 var _brightness_label: Label
+var _volume_label: Label
 var _lobby_button: Button
 var _brightness := 1.0
+var _volume := 1.0
 
 func _ready() -> void:
 	layer = 100
-	_load_brightness()
+	_load_settings()
 	_build_brightness_cover()
 	_build_menu()
 	_apply_brightness()
+	_apply_volume()
 	_panel.hide()
 
 func _input(event: InputEvent) -> void:
@@ -78,6 +81,15 @@ func _build_menu() -> void:
 	slider.value = _brightness
 	slider.value_changed.connect(_on_brightness_changed)
 	items.add_child(slider)
+	_volume_label = Label.new()
+	items.add_child(_volume_label)
+	var volume_slider := HSlider.new()
+	volume_slider.min_value = 0.0
+	volume_slider.max_value = 1.0
+	volume_slider.step = 0.05
+	volume_slider.value = _volume
+	volume_slider.value_changed.connect(_on_volume_changed)
+	items.add_child(volume_slider)
 	_lobby_button = Button.new()
 	_lobby_button.text = "联机房间" if _is_online_scene() else "进入联机模式"
 	_lobby_button.pressed.connect(_on_lobby_pressed)
@@ -104,14 +116,30 @@ func _on_lobby_pressed() -> void:
 func _on_brightness_changed(value: float) -> void:
 	_brightness = value
 	_apply_brightness()
+	_save_settings()
+
+func _on_volume_changed(value: float) -> void:
+	_volume = value
+	_apply_volume()
+	_save_settings()
+
+func _save_settings() -> void:
 	var settings := ConfigFile.new()
 	settings.set_value("display", "brightness", _brightness)
+	settings.set_value("audio", "master", _volume)
 	settings.save(SETTINGS_PATH)
 
-func _load_brightness() -> void:
+func _load_settings() -> void:
 	var settings := ConfigFile.new()
 	if settings.load(SETTINGS_PATH) == OK:
 		_brightness = clampf(float(settings.get_value("display", "brightness", 1.0)), 0.6, 1.4)
+		_volume = clampf(float(settings.get_value("audio", "master", 1.0)), 0.0, 1.0)
+
+func _apply_volume() -> void:
+	AudioServer.set_bus_mute(0, _volume <= 0.0)
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(_volume, 0.001)))
+	if _volume_label != null:
+		_volume_label.text = "音量  %d%%" % roundi(_volume * 100.0)
 
 func _apply_brightness() -> void:
 	if _brightness_cover == null:
