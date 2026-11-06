@@ -12,6 +12,7 @@
 [ext_resource type="Texture2D" uid="uid://cmg0tudkcs1qq" path="res://asset/pic/HPlineIn.png" id="9_wscrc"]
 [ext_resource type="PackedScene" path="res://scene/death_screen.tscn" id="13_death_screen"]
 [ext_resource type="PackedScene" path="res://scene/combat_hud.tscn" id="14_combat_hud"]
+[ext_resource type="Script" path="res://scene/script/ui/esc_menu.gd" id="16_esc"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_wp4xf"]
 texture = ExtResource("2_v0l8b")
@@ -352,3 +353,6 @@ texture_progress = ExtResource("9_wscrc")
 [node name="DeathScreen" parent="." unique_id=98098314 instance=ExtResource("13_death_screen")]
 
 [node name="CombatHUD" parent="." unique_id=915538906 instance=ExtResource("14_combat_hud")]
+
+[node name="EscMenu" type="CanvasLayer" parent="."]
+script = ExtResource("16_esc")
